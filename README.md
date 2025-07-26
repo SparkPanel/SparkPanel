@@ -98,7 +98,8 @@ docker-compose --version
 ### Шаг 7: Клонирование репозитория
 ```bash
 # Клонируем репозиторий
-git clone https://github.com/flahanc/SparkPanel.git
+git clone https://github.com/SparkPanel
+/SparkPanel.git
 cd SparkPanel
 ```
 

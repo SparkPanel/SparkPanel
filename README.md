@@ -29,7 +29,6 @@ SparkPanel - это современная, бесплатная панель у
 | Docker (опционально)    | -                           | Рекомендуется для изоляции игровых серверов |
 
 
-![SparkPanel Screenshot](https://cdn.discordapp.com/attachments/1396122632054902865/1398558252568019004/file_00000000f164624697c9022829d5188f.png?ex=6885cc5f&is=68847adf&hm=96c61ddce43f53a18588fd4c63c931b1bbbdb6ca2825c20c8ed6673166ed9245&)
 ## 📦 Установка на VDS (Ubuntu 22.04)
 
 ### Шаг 1: Обновление системы

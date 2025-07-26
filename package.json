@@ -1,0 +1,42 @@
+{
+  "name": "sparkpanel",
+  "version": "1.0.0",
+  "description": "SparkPanel — Панель управления игровыми серверами",
+  "private": true,
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "jest",
+    "lint": "eslint . --ext .ts .tsx",
+    "format": "prettier --write src/**/*.ts src/**/*.tsx"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "@headlessui/react": "^1.7.0",
+    "@heroicons/react": "^2.0.0",
+    "axios": "^1.6.2",
+    "date-fns": "^3.6.0",
+    "i18next": "^24.1.1",
+    "react-i18next": "^14.0.0",
+    "react-router-dom": "^6.3.0",
+    "zustand": "^4.5.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.10.0",
+    "@typescript-eslint/parser": "^6.10.0",
+    "@vitejs/plugin-react": "^4.0.0",
+    "@vitejs/plugin-typescript": "^5.0.0",
+    "eslint": "^8.56.0",
+    "eslint-config-prettier": "^9.0.0",
+    "jest": "^29.7.0",
+    "prettier": "^3.2.4",
+    "tsup": "^8.14.0",
+    "typescript": "^5.2.2",
+    "vite": "^4.5.0"
+  },
+  "type": "module"
+}

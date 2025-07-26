@@ -1,0 +1,13 @@
+[Unit]
+Description=SparkPanel Auto Configuration Service
+After=docker.service
+
+[Service]
+ExecStart=/bin/bash /path/to/sparkpanel/autoconfigure.sh
+WorkingDirectory=/path/to/sparkpanel
+Restart=on-failure
+User=www-data
+Group=www-data
+
+[Install]
+WantedBy=multi-user.target

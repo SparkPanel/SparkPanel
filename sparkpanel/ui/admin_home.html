@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SparkPanel - Главная</title>
+    <link href="/css/sparkpanel.css" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background-color: var(--spark-bg);
+            color: var(--spark-text);
+        }
+    </style>
+</head>
+<body class="dark-theme">
+    <!-- Mobile Menu -->
+    <div id="mobile-menu" class="spark-mobile-menu">
+        <div class="p-4">
+            <div class="flex justify-between items-center mb-6">
+                <div class="flex items-center">
+                    <svg class="h-8 w-8 text-indigo-400" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    <span class="ml-2 text-xl font-bold text-indigo-400">SparkPanel</span>
+                </div>
+                <button onclick="toggleMobileMenu()" class="text-gray-400 hover:text-white">
+                    <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"/>
+                    </svg>
+                </button>
+            </div>
+            
+            <nav class="space-y-2">
+                <a href="#" class="flex items-center px-4 py-3 rounded-lg text-indigo-100 bg-indigo-700">
+                    <svg class="h-5 w-5 mr-3" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"></path>
+                    </svg>
+                    Главная
+                </a>
+                <a href="#" class="flex items-center px-4 py-3 rounded-lg text-gray-300 hover:bg-indigo-700 hover:text-white transition-colors duration-200">
+                    <svg class="h-5 w-5 mr-3" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M5 3a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V5a2 2 0 00-2-2H5zm10 10H5a1 1 0 010-2h10a1 1 0 010 2z" clip-rule="evenodd"></path>
+                    </svg>
+                    Серверы
+                </a>
+                <a href="#" class="flex items-center px-4 py-3 rounded-lg text-gray-300 hover:bg-indigo-700 hover:text-white transition-colors duration-200">
+                    <svg class="h-5 w-5 mr-3" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 012 2v6a2 2 0 01-2 2H2a2 2 0 01-2-2V10a2 2 0 012-2h16z"></path>
+                    </svg>
+                    Пользователи
+                </a>
+                <a href="#" class="flex items-center px-4 py-3 rounded-lg text-gray-300 hover:bg-indigo-700 hover:text-white transition-colors duration-200">
+                    <svg class="h-5 w-5 mr-3" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.532 1.532 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"></path>
+                    </svg>
+                    Настройки
+                </a>
+            </nav>
+        </div>
+    </div>
+    
+    <!-- Main Content Wrapper -->
+    <div class="flex">
+        <!-- Sidebar Desktop -->
+        <div class="hidden md:block md:w-64 flex-shrink-0">
+            <nav class="space-y-2 p-4">
+                <a href="#" class="flex items-center px-4 py-3 rounded-lg text-indigo-100 bg-indigo-700">
+                    <svg class="h-5 w-5 mr-3" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"></path>
+                    </svg>
+                    Главная
+                </a>
+                <a href="#" class="flex items-center px-4 py-3 rounded-lg text-gray-300 hover:bg-indigo-700 hover:text-white transition-colors duration-200">
+                    <svg class="h-5 w-5 mr-3" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M5 3a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V5a2 2 0 00-2-2H5zm10 10H5a1 1 0 010-2h10a1 1 0 010 2z" clip-rule="evenodd"></path>
+                    </svg>
+                    Серверы
+                </a>
+                <a href="#" class="flex items-center px-4 py-3 rounded-lg text-gray-300 hover:bg-indigo-700 hover:text-white transition-colors duration-200">
+                    <svg class="h-5 w-5 mr-3" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 012 2v6a2 2 0 01-2 2H2a2 2 0 01-2-2V10a2 2 0 012-2h16z"></path>
+                    </svg>
+                    Пользователи
+                </a>
+                <a href="#" class="flex items-center px-4 py-3 rounded-lg text-gray-300 hover:bg-indigo-700 hover:text-white transition-colors duration-200">
+                    <svg class="h-5 w-5 mr-3" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.532 1.532 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"></path>
+                    </svg>
+                    Настройки
+                </a>
+            </nav>
+        </div>
+        
+        <!-- Main Content -->
+        <div class="flex-1 p-4 md:p-8">
+            <div class="mb-6 pb-4 border-b border-gray-700">
+                <h1 class="text-2xl font-bold text-white">Главная</h1>
+                <nav class="mt-1 flex" aria-label="Breadcrumb">
+                    <ol class="spark-breadcrumbs flex items-center space-x-1">
+                        <li><span>Панель</span><span class="separator">/</span></li>
+                        <li><span>Главная</span></li>
+                    </ol>
+                </nav>
+            </div>
+
+            <!-- Dashboard Widgets -->
+            <div class="spark-dashboard-grid">
+                <!-- Stat Cards -->
+                <div class="spark-card-stat">
+                    <div class="spark-card-stat-icon">
+                        <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+                        </svg>
+                    </div>
+                    <div class="spark-card-stat-value">1,234</div>
+                    <div class="spark-card-stat-label">Активных серверов</div>
+                </div>
+
+                <div class="spark-card-stat">
+                    <div class="spark-card-stat-icon">
+                        <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197"></path>
+                        </svg>
+                    </div>
+                    <div class="spark-card-stat-value">5,678</div>
+                    <div class="spark-card-stat-label">Пользователей</div>
+                </div>
+
+                <div class="spark-card-stat">
+                    <div class="spark-card-stat-icon">
+                        <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </div>
+                    <div class="spark-card-stat-value">23:59</div>
+                    <div class="spark-card-stat-label">Время работы</div>
+                </div>
+
+                <div class="spark-card-stat">
+                    <div class="spark-card-stat-icon">
+                        <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707"></path>
+                        </svg>
+                    </div>
+                    <div class="spark-card-stat-value">100%</div>
+                    <div class="spark-card-stat-label">Доступность</div>
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="spark-card mt-8">
+                <div class="spark-card-title">
+                    <h2>Быстрые действия</h2>
+                </div>
+                <div class="spark-quick-actions">
+                    <div class="spark-quick-action">
+                        <div class="spark-quick-action-icon">
+                            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                            </svg>
+                        </div>
+                        <div class="spark-quick-action-title">Создать сервер</div>
+                    </div>
+                    
+                    <div class="spark-quick-action">
+                        <div class="spark-quick-action-icon">
+                            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                            </svg>
+                        </div>
+                        <div class="spark-quick-action-title">Добавить пользователя</div>
+                    </div>
+                    
+                    <div class="spark-quick-action">
+                        <div class="spark-quick-action-icon">
+                            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                            </svg>
+                        </div>
+                        <div class="spark-quick-action-title">Настройки</div>
+                    </div>
+                    
+                    <div class="spark-quick-action">
+                        <div class="spark-quick-action-icon">
+                            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                            </svg>
+                        </div>
+                        <div class="spark-quick-action-title">Статистика</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Server Stats and Charts -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
+                <div class="spark-card">
+                    <div class="spark-card-title">
+                        <h2>Ресурсы сервера</h2>
+                    </div>
+                    <div class="space-y-4">
+                        <div>
+                            <div class="spark-resource-label">
+                                <span>CPU</span>
+                                <span>75%</span>
+                            </div>
+                            <div class="spark-resource-progress">
+                                <div class="spark-resource-bar cpu" style="width: 75%"></div>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <div class="spark-resource-label">
+                                <span>Память</span>
+                                <span>65%</span>
+                            </div>
+                            <div class="spark-resource-progress">
+                                <div class="spark-resource-bar memory" style="width: 65%"></div>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <div class="spark-resource-label">
+                                <span>Диск</span>
+                                <span>85%</span>
+                            </div>
+                            <div class="spark-resource-progress">
+                                <div class="spark-resource-bar disk" style="width: 85%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="spark-card">
+                    <div class="spark-card-title">
+                        <h2>Производительность</h2>
+                    </div>
+                    <div class="spark-chart-container">
+                        <div class="spark-chart-header">
+                            <div class="spark-chart-title">Загрузка CPU</div>
+                            <div class="spark-chart-period">Последние 24 часа</div>
+                        </div>
+                        <div class="spark-chart-canvas">
+                            <canvas id="cpuChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- User Table -->
+            <div class="spark-card mt-8">
+                <div class="spark-card-title">
+                    <h2>Последние пользователи</h2>
+                    <div class="spark-tag spark-tag-green">Просмотр всех</div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="spark-table">
+                        <thead>
+                            <tr>
+                                <th>Имя</th>
+                                <th>Email</th>
+                                <th>Дата регистрации</th>
+                                <th>Статус</th>
+                                <th>Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class="spark-user-name">Иван Иванов</td>
+                                <td>ivan@example.com</td>
+                                <td>2025-07-20</td>
+                                <td><span class="spark-status-indicator spark-status-online"></span> Активный</td>
+                                <td>
+                                    <button class="spark-button spark-button-secondary">Открыть</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="spark-user-name">Мария Смирнова</td>
+                                <td>maria@example.com</td>
+                                <td>2025-07-18</td>
+                                <td><span class="spark-status-indicator spark-status-offline"></span> Неактивный</td>
+                                <td>
+                                    <button class="spark-button spark-button-secondary">Открыть</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="spark-user-name">Петр Петров</td>
+                                <td>peter@example.com</td>
+                                <td>2025-07-17</td>
+                                <td><span class="spark-status-indicator spark-status-online"></span> Активный</td>
+                                <td>
+                                    <button class="spark-button spark-button-secondary">Открыть</button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <footer class="spark-footer mt-8">
+                <div class="spark-container">
+                    <p>© {{ date('Y') }} SparkPanel. Все права защищены.</p>
+                    <p class="mt-2 text-sm">Версия: 1.0.0</p>
+                </div>
+            </footer>
+            
+            <!-- Scripts -->
+            <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+            <script>
+                // Инициализация графика
+                const ctx = document.getElementById('cpuChart').getContext('2d');
+                const cpuChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00'],
+                        datasets: [{
+                            label: 'CPU Загрузка',
+                            data: [12, 19, 3, 5, 2, 3],
+                            borderColor: '#6366f1',
+                            backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                            tension: 0.4,
+                            pointRadius: 0,
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                display: false
+                            },
+                            x: {
+                                display: false
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: false
+                            }
+                        }
+                    }
+                });
+                
+                // Тема и мобильное меню скрипты
+                function toggleTheme() {
+                    document.documentElement.classList.toggle('dark-theme');
+                    const isDark = document.documentElement.classList.contains('dark-theme');
+                    localStorage.setItem('theme', isDark ? 'dark' : 'light');
+                }
+                
+                function toggleMobileMenu() {
+                    const mobileMenu = document.getElementById('mobile-menu');
+                    mobileMenu.classList.toggle('open');
+                }
+            </script>
+        </div>
+    </body>
+</html>

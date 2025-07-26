@@ -1,0 +1,11 @@
+'token_expired' => 'The verification token has expired',
+'resend_telegram_token' => 'Resend Telegram token',
+'token_verification_failed' => 'Token verification failed',
+'failed_to_resend_telegram_token' => 'Failed to resend Telegram token',
+'two_factor_authentication_required' => 'Two-factor authentication is required',
+'telegram_verification_prompt' => 'Please check your Telegram for a verification message',
+'telegram_token_saved_successfully' => 'Telegram token has been successfully saved',
+'failed_to_save_telegram_token' => 'Failed to save Telegram token',
+'telegram_token_must_be_number' => 'The Telegram chat ID must be a number',
+'telegram_token_too_short' => 'The Telegram chat ID is too short',
+'telegram_token_too_long' => 'The Telegram chat ID is too long'

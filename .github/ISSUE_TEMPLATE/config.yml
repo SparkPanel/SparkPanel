@@ -1,0 +1,10 @@
+blank_issues:
+  enabled: false
+  name: "Запрос на доработку"
+  about: "Создать пустой запрос на доработку или улучшение"
+
+issue_templates:
+  - name: "Проблема с Telegram-ботом"
+    about: "Проблемы с двухфакторной аутентификацией через Telegram"
+    labels: ["telegram", "2fa"]
+    template: "telegram.md"

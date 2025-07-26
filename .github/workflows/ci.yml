@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: '8.2'
+        extensions: mbstring, xml, curl, pdo, pdo_mysql
+        tools: composer:v2
+
+    - name: Install dependencies
+      run: |
+        composer install --no-dev --optimize-autoloader
+        npm install --frozen-lockfile
+
+    - name: Build frontend
+      run: |
+        npm run build:production
+
+    - name: Validate code
+      run: |
+        php sparkpanel validate
+
+    - name: Проверка наличия лицензии
+      run: |
+        if [ ! -f LICENSE ]; then
+          echo "Файл LICENSE отсутствует"
+          exit 1
+        fi

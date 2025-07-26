@@ -1,0 +1,45 @@
+version: '3'
+services:
+  sparkpanel:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: sparkpanel:latest
+    container_name: sparkpanel
+    restart: unless-stopped
+    tty: true
+    ports:
+      - "8080:80"
+      - "443:443"
+    volumes:
+      - .:/var/www/html
+      - ./storage/logs:/var/log/apache2
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - PANEL_TWO_FACTOR_ENABLED=${PANEL_TWO_FACTOR_ENABLED:-true}
+      - PANEL_TWO_FACTOR_ALWAYS_REQUIRE=${PANEL_TWO_FACTOR_ALWAYS_REQUIRE:-false}
+    networks:
+      - sparkpanel_network
+
+  # База данных MariaDB
+  mariadb:
+    image: mariadb:10.5
+    container_name: sparkpanel-mariadb
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-}
+      MYSQL_USER: ${MYSQL_USER:-}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-}
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    networks:
+      - sparkpanel_network
+
+networks:
+  sparkpanel_network:
+    driver: bridge
+
+volumes:
+  mariadb_data:
+    name: sparkpanel_mariadb_data

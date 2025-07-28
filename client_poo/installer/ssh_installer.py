@@ -139,7 +139,6 @@ class SSHInstaller:
                 "chmod -R 755 /var/www/sparkpanel",
                 "chown -R www-data:www-data /var/www/sparkpanel"
             ]
-            ]
             
             for command in permissions_commands:
                 stdin, stdout, stderr = self.ssh.exec_command(command, get_pty=True)

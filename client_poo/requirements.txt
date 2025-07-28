@@ -1,0 +1,7 @@
+paramiko==3.4.0
+PyQt5==5.15.9
+PyQtWebEngine==5.15.5
+PyQtChart==5.15.6
+requests==2.31.0
+cryptography==42.0.4
+psutil==5.9.8

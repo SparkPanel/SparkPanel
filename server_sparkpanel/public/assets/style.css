@@ -1,0 +1,683 @@
+/* Стили для SparkPanel */
+
+:root {
+    /* Светлая тема */
+    --bg-color: #f5f7fa;
+    --text-color: #333;
+    --header-bg: #2c3e50;
+    --header-text: #fff;
+    --card-bg: #fff;
+    --border-color: #e1e8ed;
+    --primary-color: #3498db;
+    --primary-hover: #2980b9;
+    --success-color: #2ecc71;
+    --success-hover: #27ae60;
+    --danger-color: #e74c3c;
+    --danger-hover: #c0392b;
+    --warning-color: #f39c12;
+    --warning-hover: #d35400;
+    --secondary-color: #95a5a6;
+    --secondary-hover: #7f8c8d;
+    --online-color: #2ecc71;
+    --offline-color: #e74c3c;
+    --enabled-color: #2ecc71;
+    --disabled-color: #e74c3c;
+    --progress-bg: #ecf0f1;
+}
+
+.dark-theme {
+    /* Темная тема */
+    --bg-color: #1a1a2e;
+    --text-color: #eee;
+    --header-bg: #16213e;
+    --header-text: #eee;
+    --card-bg: #16213e;
+    --border-color: #0f3460;
+    --primary-color: #3498db;
+    --primary-hover: #5dade2;
+    --success-color: #2ecc71;
+    --success-hover: #58d68d;
+    --danger-color: #e74c3c;
+    --danger-hover: #ec7063;
+    --warning-color: #f39c12;
+    --warning-hover: #f5b041;
+    --secondary-color: #95a5a6;
+    --secondary-hover: #aab7b8;
+    --online-color: #2ecc71;
+    --offline-color: #e74c3c;
+    --enabled-color: #2ecc71;
+    --disabled-color: #e74c3c;
+    --progress-bg: #1f4068;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    line-height: 1.6;
+    transition: background-color 0.3s, color 0.3s;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 1rem;
+}
+
+/* Переключатель темы */
+.theme-toggle {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    z-index: 1000;
+    background: var(--card-bg);
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+#theme-switch {
+    margin-right: 0.5rem;
+}
+
+/* Шапка */
+header {
+    background-color: var(--header-bg);
+    color: var(--header-text);
+    padding: 1rem 0;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+header .container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+header h1 {
+    font-size: 1.5rem;
+    margin: 0;
+}
+
+nav ul {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+}
+
+nav ul li {
+    margin-left: 1rem;
+}
+
+nav ul li a {
+    color: var(--header-text);
+    text-decoration: none;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    transition: background-color 0.3s;
+    display: block;
+}
+
+nav ul li a:hover,
+nav ul li a.active {
+    background-color: rgba(255,255,255,0.1);
+}
+
+/* Основное содержимое */
+main {
+    padding: 2rem 0;
+}
+
+.page {
+    display: none;
+    animation: fadeIn 0.5s ease-in-out;
+}
+
+.page.active {
+    display: block;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+h2 {
+    margin-bottom: 1.5rem;
+    color: var(--text-color);
+    font-size: 1.8rem;
+}
+
+h3 {
+    color: var(--text-color);
+    font-size: 1.3rem;
+}
+
+h4 {
+    color: var(--text-color);
+    font-size: 1.1rem;
+    margin-bottom: 0.5rem;
+}
+
+/* Карточки */
+.card {
+    background-color: var(--card-bg);
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    margin-bottom: 2rem;
+    overflow: hidden;
+    transition: transform 0.3s, box-shadow 0.3s;
+}
+
+.card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 5px 20px rgba(0,0,0,0.15);
+}
+
+.card-header {
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.card-header h3 {
+    margin: 0;
+    font-size: 1.3rem;
+}
+
+.card-body {
+    padding: 1.5rem;
+}
+
+/* Сетка серверов */
+.server-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.5rem;
+}
+
+.server-card {
+    background-color: var(--card-bg);
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    padding: 1.5rem;
+    transition: transform 0.3s, box-shadow 0.3s;
+    border: 1px solid var(--border-color);
+}
+
+.server-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+}
+
+.server-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.server-header h4 {
+    margin: 0;
+    font-size: 1.2rem;
+}
+
+.status-badge {
+    padding: 0.3rem 0.6rem;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: bold;
+}
+
+.status-online, .status-enabled {
+    background-color: rgba(46, 204, 113, 0.2);
+    color: var(--online-color);
+}
+
+.status-offline, .status-disabled {
+    background-color: rgba(231, 76, 60, 0.2);
+    color: var(--offline-color);
+}
+
+.server-details p {
+    margin: 0.5rem 0;
+}
+
+.player-count {
+    font-weight: bold;
+}
+
+/* Прогресс-бары */
+.progress-bar {
+    height: 10px;
+    background-color: var(--progress-bg);
+    border-radius: 5px;
+    margin: 1rem 0;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--primary-color), var(--success-color));
+    border-radius: 5px;
+    transition: width 0.5s ease-in-out;
+}
+
+/* Статистика */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.stat-card {
+    background-color: var(--card-bg);
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    padding: 1.5rem;
+    text-align: center;
+    transition: transform 0.3s;
+    border: 1px solid var(--border-color);
+}
+
+.stat-card:hover {
+    transform: translateY(-5px);
+}
+
+.stat-icon {
+    font-size: 2rem;
+    margin-bottom: 1rem;
+}
+
+.stat-info h3 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1.1rem;
+    color: var(--text-color);
+}
+
+.stat-value {
+    font-size: 2rem;
+    font-weight: bold;
+    color: var(--primary-color);
+    margin-bottom: 1rem;
+}
+
+/* Плагины */
+.plugins-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.5rem;
+}
+
+.plugin-card {
+    background-color: var(--card-bg);
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    padding: 1.5rem;
+    transition: transform 0.3s, box-shadow 0.3s;
+    border: 1px solid var(--border-color);
+}
+
+.plugin-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+}
+
+.plugin-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.plugin-header h4 {
+    margin: 0;
+    font-size: 1.2rem;
+}
+
+.plugin-details p {
+    margin: 0.5rem 0;
+}
+
+/* Резервные копии */
+.backup-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.backup-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background-color: var(--card-bg);
+}
+
+.backup-info h4 {
+    margin-top: 0;
+}
+
+/* Планировщик задач */
+.scheduler-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.task-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background-color: var(--card-bg);
+}
+
+.task-info h4 {
+    margin-top: 0;
+}
+
+/* Уведомления */
+.notification-settings, .notification-types {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.form-group {
+    margin-bottom: 1rem;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+}
+
+.form-control {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background-color: var(--card-bg);
+    color: var(--text-color);
+}
+
+.form-control:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+}
+
+/* Графики */
+.chart-container {
+    background-color: var(--card-bg);
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    padding: 1.5rem;
+    border: 1px solid var(--border-color);
+    margin-bottom: 1.5rem;
+}
+
+.chart-placeholder {
+    height: 300px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0,0,0,0.02);
+    border-radius: 4px;
+    border: 1px dashed var(--border-color);
+}
+
+.chart-placeholder p {
+    color: var(--secondary-color);
+}
+
+/* Логи */
+.log-filters {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.log-list {
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.log-entry {
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    flex-wrap: wrap;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+}
+
+.log-entry:last-child {
+    border-bottom: none;
+}
+
+.log-time {
+    color: var(--secondary-color);
+    margin-right: 1rem;
+    min-width: 150px;
+}
+
+.log-type {
+    font-weight: bold;
+    margin-right: 1rem;
+    min-width: 60px;
+}
+
+.log-info .log-type {
+    color: var(--primary-color);
+}
+
+.log-warning .log-type {
+    color: var(--warning-color);
+}
+
+.log-error .log-type {
+    color: var(--danger-color);
+}
+
+.log-message {
+    flex-grow: 1;
+}
+
+/* Кнопки */
+.btn {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    text-decoration: none;
+    font-size: 1rem;
+    transition: all 0.3s;
+    text-align: center;
+}
+
+.btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+
+.btn-primary {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+.btn-primary:hover {
+    background-color: var(--primary-hover);
+}
+
+.btn-success {
+    background-color: var(--success-color);
+    color: white;
+}
+
+.btn-success:hover {
+    background-color: var(--success-hover);
+}
+
+.btn-danger {
+    background-color: var(--danger-color);
+    color: white;
+}
+
+.btn-danger:hover {
+    background-color: var(--danger-hover);
+}
+
+.btn-warning {
+    background-color: var(--warning-color);
+    color: white;
+}
+
+.btn-warning:hover {
+    background-color: var(--warning-hover);
+}
+
+.btn-secondary {
+    background-color: var(--secondary-color);
+    color: white;
+}
+
+.btn-secondary:hover {
+    background-color: var(--secondary-hover);
+}
+
+.btn-error {
+    background-color: var(--danger-color);
+    color: white;
+}
+
+.btn-error:hover {
+    background-color: var(--danger-hover);
+}
+
+.btn-outline {
+    background-color: transparent;
+    border: 1px solid var(--primary-color);
+    color: var(--primary-color);
+}
+
+.btn-outline:hover {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+.btn-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+}
+
+/* Подвал */
+footer {
+    text-align: center;
+    padding: 2rem 0;
+    background-color: var(--header-bg);
+    color: var(--header-text);
+    margin-top: 2rem;
+}
+
+/* Адаптивность */
+@media (max-width: 768px) {
+    .container {
+        padding: 0 0.5rem;
+    }
+    
+    header .container {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    nav ul {
+        justify-content: center;
+        margin-top: 1rem;
+    }
+    
+    nav ul li {
+        margin: 0.25rem;
+    }
+    
+    .card-header {
+        flex-direction: column;
+        align-items: stretch;
+        text-align: center;
+        gap: 1rem;
+    }
+    
+    .server-grid, .plugins-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .stats-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .log-entry {
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+    
+    .log-time, .log-type {
+        min-width: auto;
+    }
+    
+    .theme-toggle {
+        position: static;
+        margin: 1rem auto;
+        width: fit-content;
+    }
+    
+    .backup-item, .task-item {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 1rem;
+    }
+    
+    .backup-actions, .task-actions {
+        display: flex;
+        justify-content: center;
+        gap: 0.5rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .server-card, .plugin-card {
+        padding: 1rem;
+    }
+    
+    .card-header, .card-body {
+        padding: 1rem;
+    }
+    
+    .stat-card {
+        padding: 1rem;
+    }
+    
+    .log-filters {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+}

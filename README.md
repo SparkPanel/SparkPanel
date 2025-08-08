@@ -1,5 +1,7 @@
 # SparkPanel
 
+[![SparkPanel Logo](https://i.postimg.cc/cHGpXrhV/photo-2025-07-24-16-01-52.png)](https://postimg.cc/5HpKt9Z3)
+
 SparkPanel — это современная бесплатная панель управления игровыми серверами с открытым исходным кодом, которая обеспечивает безопасную и интуитивно понятную среду для управления игровыми серверами.
 
 ## Возможности
@@ -325,32 +327,3 @@ cd /opt/SparkPanel && sudo docker compose down -v
 # файлы
 sudo rm -rf /var/lib/sparkpanel/servers
 ```
-
-## API (кратко)
-- `POST /api/auth/register` — регистрация
-- `GET  /api/auth/verify-email?token=...` — подтверждение email
-- `POST /api/auth/login` — вход (email/username + пароль + 2FA при необходимости)
-- `POST /api/auth/refresh` — обновление access токена по refresh (cookie)
-- `POST /api/auth/logout` — выход
-- `POST /api/auth/2fa/setup|enable|disable` — управление 2FA (требует access)
-- `GET  /api/users/me` — профиль
-- `GET  /api/users` (ADMIN) — список пользователей
-- `PUT  /api/users/:id/roles` (ADMIN) — выдать роли
-- `GET  /api/servers` — сервера пользователя
-- `POST /api/servers` — создать сервер
-- `GET  /api/servers/:id` — детали сервера
-- `POST  /api/servers/:id/start|stop` — управление контейнером
-- `GET  /api/servers/:id/stats` — разовые статусы
-- `GET  /api/servers/:id/files` — листинг
-- `GET  /api/servers/:id/files/download?path=...` — скачать
-- `POST /api/servers/:id/files/upload` — загрузить (multipart)
-- `DELETE /api/servers/:id/files?path=...` — удалить
-
-Socket.IO: auth через `auth.token = <access JWT>`, события `watch_server`, `unwatch_server`, ответы `server_stats`.
-
-## Лицензия
-Проект распространяется под лицензией MIT. Полный текст находится в файле `LICENSE`.
-
-© 2025 SparkPanel Authors. Все права защищены.
-
-Ссылка на репозиторий: [GitHub — SparkPanel](https://github.com/SparkPanel/SparkPanel/tree/main)

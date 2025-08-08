@@ -2,6 +2,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
 import { useState, useEffect } from 'react';
 
+const LOGO_URL = 'https://i.postimg.cc/cHGpXrhV/photo-2025-07-24-16-01-52.png';
+
 export default function NavBar() {
   const { user, logout } = useAuthStore();
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
@@ -17,7 +19,10 @@ export default function NavBar() {
   return (
     <div className="border-b border-gray-200 dark:border-gray-800">
       <div className="max-w-7xl mx-auto p-3 flex items-center gap-4">
-        <Link to="/" className="font-bold">SparkPanel</Link>
+        <Link to="/" className="flex items-center gap-2 font-bold">
+          <img src={LOGO_URL} alt="SparkPanel" className="h-7 w-7 rounded" />
+          <span>SparkPanel</span>
+        </Link>
         <Link to="/servers">Сервера</Link>
         <Link to="/settings">Настройки</Link>
         <div className="flex-1" />

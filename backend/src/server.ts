@@ -9,13 +9,14 @@ import routes from './routes.js';
 import { errorMiddleware } from './utils/errors.js';
 import { prisma } from './db.js';
 import { verifyAccessToken } from './auth/jwt.js';
-import { getStats } from './servers/docker.js';
+import { getStats, followContainerLogs } from './servers/docker.js';
+import { sendRconCommand } from './servers/rcon.js';
+import { startScheduler } from './scheduler.js';
 
 async function seed() {
   for (const name of ['ADMIN', 'MODERATOR', 'USER']) {
     await prisma.role.upsert({ where: { name }, update: {}, create: { name } });
   }
-  // optional bootstrap admin
   const adminEmail = process.env.ADMIN_EMAIL;
   const adminPassword = process.env.ADMIN_PASSWORD;
   if (adminEmail && adminPassword) {
@@ -58,10 +59,10 @@ async function bootstrap() {
   });
 
   const intervals = new Map<string, NodeJS.Timer>();
+  const logStreams = new Map<string, any>();
 
   io.on('connection', (socket) => {
     socket.on('watch_server', async (serverId: string) => {
-      // ensure user owns this server
       const server = await prisma.server.findFirst({ where: { id: serverId, ownerId: (socket as any).user.id } });
       if (!server) return;
       const key = `${socket.id}:${serverId}`;
@@ -77,15 +78,44 @@ async function bootstrap() {
       const key = `${socket.id}:${serverId}`;
       const t = intervals.get(key);
       if (t) { clearInterval(t); intervals.delete(key); }
+      const ls = logStreams.get(key);
+      if (ls) { try { ls.destroy?.(); } catch {} logStreams.delete(key); }
+    });
+
+    socket.on('follow_logs', async (serverId: string) => {
+      const server = await prisma.server.findFirst({ where: { id: serverId, ownerId: (socket as any).user.id } });
+      if (!server) return;
+      const key = `${socket.id}:${serverId}`;
+      if (logStreams.has(key)) return;
+      const stream = await followContainerLogs(serverId, (line) => {
+        socket.emit('server_log', { serverId, line });
+      });
+      if (stream) logStreams.set(key, stream);
+    });
+
+    socket.on('rcon_command', async (payload: { serverId: string; command: string }) => {
+      const server = await prisma.server.findFirst({ where: { id: payload.serverId, ownerId: (socket as any).user.id } });
+      if (!server || !server.rconEnabled || !server.rconPort || !server.rconPassword) return;
+      const host = '127.0.0.1'; // RCON доступен по хосту
+      try {
+        const resp = await sendRconCommand(host, server.rconPort, server.rconPassword, payload.command);
+        socket.emit('rcon_response', { serverId: payload.serverId, response: resp });
+      } catch (e: any) {
+        socket.emit('rcon_response', { serverId: payload.serverId, response: 'Ошибка RCON: ' + (e?.message || e) });
+      }
     });
 
     socket.on('disconnect', () => {
       for (const [key, t] of intervals) {
         if (key.startsWith(socket.id + ':')) { clearInterval(t); intervals.delete(key); }
       }
+      for (const [key, ls] of logStreams) {
+        if (key.startsWith(socket.id + ':')) { try { ls.destroy?.(); } catch {} logStreams.delete(key); }
+      }
     });
   });
 
+  startScheduler();
   await seed();
 
   server.listen(config.port, () => {

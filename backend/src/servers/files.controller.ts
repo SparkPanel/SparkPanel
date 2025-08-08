@@ -9,6 +9,8 @@ import os from 'os';
 import { prisma } from '../db.js';
 import { serverDataPath } from './docker.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { getDirectorySizeBytes } from './quota.js';
+import { config } from '../config.js';
 
 const tmpUploadDir = path.join(os.tmpdir(), 'sparkpanel_uploads');
 try { fssync.mkdirSync(tmpUploadDir, { recursive: true }); } catch {}
@@ -44,6 +46,19 @@ router.post('/upload', authRequired, upload.single('file'), asyncHandler(async (
   const server = await prisma.server.findFirst({ where: { id: req.params.id, ownerId: req.user!.id } });
   if (!server) throw new HttpError(404, 'Сервер не найден');
   const base = serverDataPath(server.id);
+
+  // quota check
+  if (config.diskQuota.enforce) {
+    const currentSize = await getDirectorySizeBytes(base);
+    const incoming = req.file ? fssync.statSync(req.file.path).size : 0;
+    const limitBytes = (server.diskLimitMb ?? config.diskQuota.defaultMb) * 1024 * 1024;
+    if (currentSize + incoming > limitBytes) {
+      // cleanup temp
+      try { if (req.file) fssync.unlinkSync(req.file.path); } catch {}
+      throw new HttpError(400, 'Превышен диск лимит сервера');
+    }
+  }
+
   const toPath = resolveSafe(base, String(req.query.path || (req.file?.originalname ?? 'upload.bin')));
   await fs.mkdir(path.dirname(toPath), { recursive: true });
   await fs.rename(req.file!.path, toPath);

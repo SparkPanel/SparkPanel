@@ -77,6 +77,8 @@ model Server {
   ipAddress     String?
   port          Int      @default(25565)
   rconPort      Int? 
+  rconEnabled   Boolean  @default(false)
+  rconPassword  String?
   dockerId      String?  @unique
   status        ServerStatus @default(STOPPED)
   cpuLimit      Float? // in cores (e.g., 1.5)
@@ -89,6 +91,8 @@ model Server {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   logs          AuditLog[]
+  backups       Backup[]
+  tasks         Task[]
 }
 
 enum ServerStatus {
@@ -97,6 +101,39 @@ enum ServerStatus {
   STARTING
   STOPPING
   ERROR
+}
+
+enum BackupStorage {
+  LOCAL
+  S3
+}
+
+model Backup {
+  id        String   @id @default(cuid())
+  server    Server   @relation(fields: [serverId], references: [id])
+  serverId  String
+  storage   BackupStorage @default(LOCAL)
+  path      String?  // for LOCAL
+  s3Bucket  String?  // for S3
+  s3Key     String?  // for S3
+  sizeBytes Int
+  createdAt DateTime @default(now())
+}
+
+model Task {
+  id        String   @id @default(cuid())
+  server    Server   @relation(fields: [serverId], references: [id])
+  serverId  String
+  type      TaskType
+  cron      String
+  enabled   Boolean  @default(true)
+  lastRunAt DateTime?
+  createdAt DateTime @default(now())
+}
+
+enum TaskType {
+  BACKUP
+  RESTART
 }
 
 model AuditLog {

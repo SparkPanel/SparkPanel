@@ -67,7 +67,8 @@ npm run dev
 
 ---
 
-## Установка на Ubuntu 22.04 (подробно)
+## Установка на Ubuntu 22.04 (подробно, VDS IP)
+Предположим, IP вашего VDS: `203.0.113.10`. Везде ниже подставляйте свой реальный IP/домен.
 
 ### 1) Docker
 ```bash
@@ -104,7 +105,8 @@ nano backend/.env
 Заполните как минимум:
 - `DATABASE_URL` (оставьте из compose по умолчанию)
 - `JWT_ACCESS_SECRET` и `JWT_REFRESH_SECRET` (случайные строки)
-- `BASE_URL` (URL фронтенда) и `API_BASE_URL` (публичный URL backend — важен для писем)
+- `BASE_URL` — `http://203.0.113.10:5173` (или домен)
+- `API_BASE_URL` — `http://203.0.113.10:8080` (или домен)
 - Опционально `ADMIN_EMAIL`, `ADMIN_PASSWORD` для автосоздания админа
 
 Создайте `FILES_ROOT` и права:
@@ -113,7 +115,7 @@ sudo mkdir -p /var/lib/sparkpanel/servers
 sudo chown -R $USER:$USER /var/lib/sparkpanel/servers
 ```
 
-### 6) Установка/миграции
+### 6) Установка/миграции backend
 ```bash
 cd backend
 npm install --no-fund --no-audit
@@ -125,15 +127,50 @@ npx prisma migrate deploy
 ```bash
 npm run dev
 ```
-Backend: `http://localhost:8080`.
+Backend: `http://203.0.113.10:8080`.
 
-### 8) Запуск frontend
+### 8) Запуск frontend (с доступом по IP)
+В другом терминале:
 ```bash
-cd ../../frontend
+cd ../frontend
 npm install --no-fund --no-audit
-npm run dev
+npm run dev  # уже запускается с --host
 ```
-Frontend: `http://localhost:5173`.
+Frontend: `http://203.0.113.10:5173`.
+
+Если используете домен — укажите его вместо IP в `BASE_URL`/`API_BASE_URL` и настройте DNS A‑запись.
+
+### 9) Firewall (UFW)
+```bash
+sudo ufw allow OpenSSH
+sudo ufw allow 5173
+sudo ufw allow 8080
+sudo ufw allow 25565/tcp  # для Minecraft
+sudo ufw enable
+sudo ufw status
+```
+
+> ВАЖНО: значения по умолчанию `BASE_URL=http://localhost:5173` и `API_BASE_URL=http://localhost:8080` предназначены ТОЛЬКО для локальной разработки. На VDS всегда задавайте эти переменные на IP/домен сервера — иначе фронтенд/Socket.IO и ссылки из писем могут работать некорректно.
+
+---
+
+## Переменные окружения (backend/.env)
+Обязательные/важные:
+- `PORT` — порт API (по умолчанию 8080)
+- `BASE_URL` — URL фронтенда (CORS и Socket.IO)
+- `API_BASE_URL` — публичный URL backend (используется в ссылках email)
+- `DATABASE_URL` — строка подключения к PostgreSQL
+- `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` — секреты JWT
+- `FILES_ROOT` — каталог данных серверов на хосте
+
+Дополнительно:
+- Квоты диска: `DISK_QUOTA_ENFORCE=true|false`, `DISK_QUOTA_DEFAULT_MB=10240`
+- Ретеншн бэкапов: `BACKUP_RETENTION_DAYS=14`, `BACKUP_RETENTION_MAX=10`
+- S3 бэкапы: `S3_ENABLED=true|false`, `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_SSE` (опц.), `S3_PATH_STYLE=true|false`
+- SMTP (опц.): `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`
+- Bootstrap‑админ (опц.): `ADMIN_EMAIL`, `ADMIN_PASSWORD`
+
+> Рекомендация для продакшна: всегда явно задавайте `BASE_URL` и `API_BASE_URL` (IP/домен с протоколом http/https). Даже если локальные дефолты работают, они могут ломать CORS, Socket.IO и ссылки из email.
 
 ---
 

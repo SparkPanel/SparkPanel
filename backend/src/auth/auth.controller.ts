@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { prisma } from '../db.js';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
@@ -18,16 +18,14 @@ const registerSchema = z.object({
   password: passwordSchema,
 });
 
-router.post('/register', async (req, res) => {
+router.post('/register', async (req: Request, res: Response) => {
   const data = registerSchema.parse(req.body);
   const exists = await prisma.user.findFirst({ where: { OR: [{ email: data.email }, { username: data.username }] } });
   assert(!exists, 400, 'Пользователь с таким email или именем уже существует');
   const hash = await bcrypt.hash(data.password, 10);
   const user = await prisma.user.create({ data: { email: data.email, username: data.username, passwordHash: hash } });
-  // attach default role USER
   const userRole = await prisma.role.upsert({ where: { name: 'USER' }, update: {}, create: { name: 'USER' } });
   await prisma.user.update({ where: { id: user.id }, data: { roles: { connect: { id: userRole.id } } } });
-  // email verification
   const token = crypto.randomBytes(32).toString('hex');
   const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24);
   await prisma.emailVerificationToken.create({ data: { userId: user.id, token, expiresAt } });
@@ -36,7 +34,7 @@ router.post('/register', async (req, res) => {
   res.status(201).json({ ok: true });
 });
 
-router.get('/verify-email', async (req, res) => {
+router.get('/verify-email', async (req: Request, res: Response) => {
   const token = String(req.query.token || '');
   assert(token, 400, 'Токен обязателен');
   const record = await prisma.emailVerificationToken.findUnique({ where: { token } });
@@ -47,12 +45,12 @@ router.get('/verify-email', async (req, res) => {
 });
 
 const loginSchema = z.object({
-  login: z.string(), // email or username
+  login: z.string(),
   password: passwordSchema,
   twoFactorToken: z.string().optional(),
 });
 
-function setRefreshCookie(res: any, token: string) {
+function setRefreshCookie(res: Response, token: string) {
   res.cookie('refresh_token', token, {
     httpOnly: true,
     sameSite: 'lax',
@@ -62,7 +60,7 @@ function setRefreshCookie(res: any, token: string) {
   });
 }
 
-router.post('/login', async (req, res) => {
+router.post('/login', async (req: Request, res: Response) => {
   const data = loginSchema.parse(req.body);
   const user = await prisma.user.findFirst({ where: { OR: [{ email: data.login }, { username: data.login }] }, include: { roles: true } });
   assert(user, 401, 'Неверные учетные данные');
@@ -82,8 +80,8 @@ router.post('/login', async (req, res) => {
   res.json({ accessToken: access, user: { id: user!.id, email: user!.email, username: user!.username, roles } });
 });
 
-router.post('/refresh', async (req, res) => {
-  const token = req.cookies?.refresh_token || req.body?.refreshToken;
+router.post('/refresh', async (req: Request, res: Response) => {
+  const token = (req as any).cookies?.refresh_token || (req.body as any)?.refreshToken;
   assert(token, 401, 'Нет refresh токена');
   const payload = verifyRefreshToken(token);
   const session = await prisma.session.findUnique({ where: { refreshToken: token } });
@@ -92,7 +90,6 @@ router.post('/refresh', async (req, res) => {
   assert(user, 401, 'Пользователь не найден');
   const roles = user!.roles.map(r => r.name);
   const newAccess = signAccessToken(user!.id, roles);
-  // rotate refresh
   const newRefresh = signRefreshToken(user!.id, roles);
   const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 30);
   await prisma.session.update({ where: { id: session!.id }, data: { refreshToken: newRefresh, expiresAt } });
@@ -100,8 +97,8 @@ router.post('/refresh', async (req, res) => {
   res.json({ accessToken: newAccess });
 });
 
-router.post('/logout', async (req, res) => {
-  const token = req.cookies?.refresh_token || req.body?.refreshToken;
+router.post('/logout', async (req: Request, res: Response) => {
+  const token = (req as any).cookies?.refresh_token || (req.body as any)?.refreshToken;
   if (token) {
     await prisma.session.deleteMany({ where: { refreshToken: token } });
     res.clearCookie('refresh_token', { path: '/api/auth' });
@@ -111,14 +108,14 @@ router.post('/logout', async (req, res) => {
 
 export function twoFaProtectedRoutes() {
   const r = Router();
-  r.post('/2fa/setup', async (req, res) => {
+  r.post('/2fa/setup', async (req: Request, res: Response) => {
     const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
     const secret = generateTwoFaSecret(user!.username);
     await prisma.user.update({ where: { id: user!.id }, data: { twoFaSecret: secret.base32 } });
     const qr = await generateQrDataUrl(secret.otpauth_url!);
     res.json({ otpauthUrl: secret.otpauth_url, qrDataUrl: qr, base32: secret.base32 });
   });
-  r.post('/2fa/enable', async (req, res) => {
+  r.post('/2fa/enable', async (req: Request, res: Response) => {
     const schema = z.object({ token: z.string() });
     const data = schema.parse(req.body);
     const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
@@ -127,7 +124,7 @@ export function twoFaProtectedRoutes() {
     await prisma.user.update({ where: { id: user!.id }, data: { twoFaEnabled: true } });
     res.json({ ok: true });
   });
-  r.post('/2fa/disable', async (req, res) => {
+  r.post('/2fa/disable', async (req: Request, res: Response) => {
     const schema = z.object({ token: z.string() });
     const data = schema.parse(req.body);
     const user = await prisma.user.findUnique({ where: { id: req.user!.id } });

@@ -14,6 +14,9 @@ export interface CreateServerOptions {
   cpuLimit?: number; // cores
   memoryLimitMb?: number;
   port: number;
+  rconEnabled?: boolean;
+  rconPort?: number;
+  rconPassword?: string;
 }
 
 export function serverDataPath(serverId: string) {
@@ -39,16 +42,10 @@ export async function createOrStartContainer(opts: CreateServerOptions) {
   const name = `spark_mc_${opts.id}`;
   const dir = await ensureServerDir(opts.id);
 
-  const hostConfig: ContainerCreateOptions['HostConfig'] = {
-    Binds: [`${dir}:/data`],
-    PortBindings: {
-      '25565/tcp': [{ HostPort: String(opts.port) }],
-    },
-    Memory: opts.memoryLimitMb ? opts.memoryLimitMb * 1024 * 1024 : undefined,
-    NanoCPUs: opts.cpuLimit ? Math.floor(opts.cpuLimit * 1e9) : undefined,
-    RestartPolicy: { Name: 'unless-stopped' },
+  const portBindings: Record<string, Array<{ HostPort: string }>> = {
+    '25565/tcp': [{ HostPort: String(opts.port) }],
   };
-
+  const exposed: Record<string, {}> = { '25565/tcp': {} };
   const env = [
     'EULA=TRUE',
     `VERSION=${opts.version}`,
@@ -57,6 +54,20 @@ export async function createOrStartContainer(opts: CreateServerOptions) {
     'GID=1000',
     'USE_AIKAR_FLAGS=true',
   ];
+
+  if (opts.rconEnabled && opts.rconPort && opts.rconPassword) {
+    portBindings['25575/tcp'] = [{ HostPort: String(opts.rconPort) }];
+    exposed['25575/tcp'] = {};
+    env.push('ENABLE_RCON=TRUE', `RCON_PASSWORD=${opts.rconPassword}`);
+  }
+
+  const hostConfig: ContainerCreateOptions['HostConfig'] = {
+    Binds: [`${dir}:/data`],
+    PortBindings: portBindings,
+    Memory: opts.memoryLimitMb ? opts.memoryLimitMb * 1024 * 1024 : undefined,
+    NanoCPUs: opts.cpuLimit ? Math.floor(opts.cpuLimit * 1e9) : undefined,
+    RestartPolicy: { Name: 'unless-stopped' },
+  };
 
   // ensure image exists
   await pullImage(opts.image).catch(() => {});
@@ -70,7 +81,7 @@ export async function createOrStartContainer(opts: CreateServerOptions) {
       name,
       Image: opts.image,
       Env: env,
-      ExposedPorts: { '25565/tcp': {} },
+      ExposedPorts: exposed,
       HostConfig: hostConfig,
       Labels: { 'sparkpanel.serverId': opts.id },
     });
@@ -123,4 +134,25 @@ export async function getStats(serverId: string) {
     tx_bytes: acc.tx_bytes + (n.tx_bytes || 0),
   }), { rx_bytes: 0, tx_bytes: 0 }) : { rx_bytes: 0, tx_bytes: 0 };
   return { cpuPercent, memoryUsage, memoryLimit, netIO: netAgg };
+}
+
+export async function getContainerByServerId(serverId: string) {
+  const name = `spark_mc_${serverId}`;
+  const containers = await docker.listContainers({ all: true, filters: { name: [name] } as any });
+  if (!containers.length) return null;
+  return docker.getContainer(containers[0].Id);
+}
+
+export async function followContainerLogs(serverId: string, onData: (line: string) => void) {
+  const container = await getContainerByServerId(serverId);
+  if (!container) return null;
+  const logStream = await container.logs({ follow: true, stdout: true, stderr: true, tail: 100 });
+  // Dockerode returns a stream with multiplexed stdout/stderr; decode chunks
+  logStream.on('data', (chunk: Buffer) => {
+    // Strip docker multiplexing header if present
+    // If using TTY=false, docker adds an 8-byte header. Here we try to parse lines robustly.
+    const text = chunk.toString('utf8');
+    text.split(/\r?\n/).forEach(line => line && onData(line));
+  });
+  return logStream;
 } 

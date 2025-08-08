@@ -1,0 +1,127 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String   @id @default(cuid())
+  email             String   @unique
+  username          String   @unique
+  passwordHash      String
+  isEmailVerified   Boolean  @default(false)
+  twoFaEnabled      Boolean  @default(false)
+  twoFaSecret       String?  
+  roles             Role[]
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  servers           Server[] @relation("UserServers")
+  sessions          Session[]
+  apiTokens         ApiToken[]
+  auditLogs         AuditLog[]
+  notificationChannels NotificationChannel[]
+}
+
+model Role {
+  id       Int     @id @default(autoincrement())
+  name     String  @unique // ADMIN, MODERATOR, USER
+  users    User[]
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  user         User     @relation(fields: [userId], references: [id])
+  userId       String
+  refreshToken String   @unique
+  userAgent    String?
+  ipAddress    String?
+  createdAt    DateTime @default(now())
+  expiresAt    DateTime
+}
+
+model ApiToken {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  name      String
+  tokenHash String   @unique
+  createdAt DateTime @default(now())
+}
+
+model EmailVerificationToken {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model Server {
+  id            String   @id @default(cuid())
+  name          String
+  owner         User     @relation("UserServers", fields: [ownerId], references: [id])
+  ownerId       String
+  ipAddress     String?
+  port          Int      @default(25565)
+  rconPort      Int? 
+  dockerId      String?  @unique
+  status        ServerStatus @default(STOPPED)
+  cpuLimit      Float? // in cores (e.g., 1.5)
+  memoryLimitMb Int?   // RAM in MB
+  diskLimitMb   Int?
+  image         String  @default("itzg/minecraft-server")
+  version       String  @default("1.20.6")
+  type          String  @default("VANILLA") // VANILLA, SPIGOT, PAPER, FORGE, FABRIC
+  eulaAccepted  Boolean @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  logs          AuditLog[]
+}
+
+enum ServerStatus {
+  RUNNING
+  STOPPED
+  STARTING
+  STOPPING
+  ERROR
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  user      User?    @relation(fields: [userId], references: [id])
+  userId    String?
+  action    String
+  entity    String?
+  entityId  String?
+  ipAddress String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+}
+
+model NotificationChannel {
+  id          String   @id @default(cuid())
+  user        User     @relation(fields: [userId], references: [id])
+  userId      String
+  type        NotificationType
+  tokenOrUrl  String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+}
+
+enum NotificationType {
+  DISCORD_WEBHOOK
+  TELEGRAM_BOT
+} 

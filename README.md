@@ -87,7 +87,7 @@ node -v
 
 ### 3) Клонирование
 ```bash
-git clone https://your.repo/SparkPanel.git
+git clone https://SparkPanel/SparkPanel.git
 cd SparkPanel
 ```
 

@@ -187,6 +187,19 @@ GET {API_BASE_URL}/api/auth/verify-email?token=...
 ### Создание через SSH (CLI)
 См. раздел «Создание пользователя через SSH (CLI)» ниже — готовые однострочники `node -e` для: создать пользователя, выдать ADMIN, сбросить пароль.
 
+### Быстрый CLI для пользователей
+После установки зависимостей (в каталоге `backend`):
+```bash
+# создать пользователя (email подтвердится автоматически)
+node scripts/user.mjs create --email user@example.com --username user1 --password StrongPass123
+
+# выдать ADMIN существующему пользователю
+node scripts/user.mjs admin --login user@example.com
+
+# сбросить пароль
+node scripts/user.mjs reset-password --login user@example.com --password NewStrongPass123
+```
+
 ---
 
 ## Продакшн установка (с SSL, nginx, systemd)
@@ -287,28 +300,6 @@ sudo ufw status
 - корректные `JWT_*` и `DATABASE_URL`
 - `FILES_ROOT` должен существовать и быть доступным пользователю сервиса
 
----
-
-## Создание пользователя через SSH (CLI)
-1) Перейдите в backend и установите зависимости:
-```bash
-cd /opt/SparkPanel/backend
-npm install --no-fund --no-audit
-```
-2) Создать пользователя (email подтверждён):
-```bash
-node --input-type=module -e "import 'dotenv/config'; import {PrismaClient} from '@prisma/client'; import bcrypt from 'bcryptjs'; const prisma=new PrismaClient(); const email='user@example.com'; const username='user1'; const password='StrongPass123'; const run=async()=>{ const hash=await bcrypt.hash(password,10); let u=await prisma.user.findFirst({where:{OR:[{email},{username}]}}); if(!u){ u=await prisma.user.create({data:{email,username,passwordHash:hash,isEmailVerified:true}});} const role=await prisma.role.upsert({where:{name:'USER'},update:{},create:{name:'USER'}}); await prisma.user.update({where:{id:u.id},data:{roles:{connect:{id:role.id}}}}); console.log('Created/updated user id:',u.id); }; run().finally(()=>prisma.$disconnect());"
-```
-3) Выдать ADMIN:
-```bash
-node --input-type=module -e "import 'dotenv/config'; import {PrismaClient} from '@prisma/client'; const prisma=new PrismaClient(); const login='user@example.com'; const run=async()=>{ const u=await prisma.user.findFirst({where:{OR:[{email:login},{username:login}]}}); if(!u){ throw new Error('User not found'); } const role=await prisma.role.upsert({where:{name:'ADMIN'},update:{},create:{name:'ADMIN'}}); await prisma.user.update({where:{id:u.id},data:{roles:{connect:{id:role.id}}}}); console.log('Granted ADMIN to:',u.id); }; run().finally(()=>prisma.$disconnect());"
-```
-4) Сброс пароля:
-```bash
-node --input-type=module -e "import 'dotenv/config'; import {PrismaClient} from '@prisma/client'; import bcrypt from 'bcryptjs'; const prisma=new PrismaClient(); const login='user@example.com'; const newPassword='NewStrongPass123'; const run=async()=>{ const u=await prisma.user.findFirst({where:{OR:[{email:login},{username:login}]}}); if(!u){ throw new Error('User not found'); } const hash=await bcrypt.hash(newPassword,10); await prisma.user.update({where:{id:u.id},data:{passwordHash:hash}}); await prisma.session.deleteMany({where:{userId:u.id}}); console.log('Password reset for:',u.id); }; run().finally(()=>prisma.$disconnect());"
-```
-
----
 
 ## Обновление панели
 ```bash

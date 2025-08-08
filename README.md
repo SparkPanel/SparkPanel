@@ -1,6 +1,6 @@
 # SparkPanel
 
-Мощная веб‑панель для управления игровыми серверами. Цель — сделать удобную, красивую и быструю панель с дружелюбным UX в духе «be happy».
+SparkPanel — это современная бесплатная панель управления игровыми серверами с открытым исходным кодом, которая обеспечивает безопасную и интуитивно понятную среду для управления игровыми серверами.
 
 ## Возможности
 - Регистрация, подтверждение email, вход с 2FA (TOTP), восстановление пароля
@@ -26,95 +26,305 @@
 - Docker Engine + Docker Compose v2
 - Node.js 20.x (рекомендуется LTS), npm 10+
 - PostgreSQL 16 (можно в контейнере)
+- 2–4 ГБ RAM минимум для одного Minecraft‑сервера (рекомендуется ≥ 4 ГБ)
 
-## Установка на Ubuntu 22.04
+---
 
-### 1) Установите Docker
+## Быстрый старт (5–10 минут, DEV)
+1) Установите Docker и Node 20 (см. ниже «Установка на Ubuntu»).
+2) Клонируйте и откройте проект:
+```bash
+git clone https://your.repo/SparkPanel.git
+cd SparkPanel
+```
+3) Поднимите PostgreSQL:
+```bash
+sudo docker compose up -d postgres
+```
+4) Настройте `backend/.env` (скопируйте из `.env.example` и задайте JWT секреты). При желании добавьте `ADMIN_EMAIL`/`ADMIN_PASSWORD`.
+5) Создайте папку для данных серверов и права:
+```bash
+sudo mkdir -p /var/lib/sparkpanel/servers
+sudo chown -R $USER:$USER /var/lib/sparkpanel/servers
+```
+6) Backend: установка и миграции
+```bash
+cd backend
+npm install --no-fund --no-audit
+npx prisma generate
+npx prisma migrate dev --name init
+npm run dev
+```
+7) Frontend (в новом терминале):
+```bash
+cd ../frontend
+npm install --no-fund --no-audit
+npm run dev
+```
+Откройте `http://localhost:5173`.
+
+---
+
+## Установка на Ubuntu 22.04 (подробно)
+
+### 1) Docker
 ```bash
 curl -fsSL https://get.docker.com | sudo sh
 sudo usermod -aG docker $USER
 newgrp docker
 ```
+Проверьте: `docker --version`.
 
-### 2) Установите Node.js 20
+### 2) Node.js 20
 ```bash
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt-get install -y nodejs build-essential
+node -v
 ```
 
-### 3) Клонируйте проект
+### 3) Клонирование
 ```bash
 git clone https://your.repo/SparkPanel.git
 cd SparkPanel
 ```
 
-### 4) Поднимите PostgreSQL (через docker-compose)
+### 4) PostgreSQL (docker-compose)
 ```bash
 sudo docker compose up -d postgres
 ```
-Проверьте: `docker ps` должен показать контейнер `postgres`.
+Проверьте: `docker ps` (контейнер postgres должен работать).
 
-### 5) Настройте переменные окружения backend
+### 5) Конфиг backend
 ```bash
 cp backend/.env.example backend/.env
 nano backend/.env
 ```
-- Укажите `DATABASE_URL` на ваш Postgres (если compose — значение по умолчанию подойдёт)
-- Задайте `JWT_ACCESS_SECRET` и `JWT_REFRESH_SECRET`
-- При необходимости отредактируйте `BASE_URL` (URL фронтенда), `FILES_ROOT` (где хранить данные серверов)
-- Для автоматического создания админа добавьте `ADMIN_EMAIL` и `ADMIN_PASSWORD`
+Заполните как минимум:
+- `DATABASE_URL` (оставьте из compose по умолчанию)
+- `JWT_ACCESS_SECRET` и `JWT_REFRESH_SECRET` (случайные строки)
+- `BASE_URL` (URL фронтенда) и `API_BASE_URL` (публичный URL backend — важен для писем)
+- Опционально `ADMIN_EMAIL`, `ADMIN_PASSWORD` для автосоздания админа
 
-Создайте директорию для данных серверов:
+Создайте `FILES_ROOT` и права:
 ```bash
 sudo mkdir -p /var/lib/sparkpanel/servers
 sudo chown -R $USER:$USER /var/lib/sparkpanel/servers
 ```
 
-### 6) Установка зависимостей и миграции Prisma
+### 6) Установка/миграции
 ```bash
 cd backend
 npm install --no-fund --no-audit
 npx prisma generate
 npx prisma migrate deploy
 ```
-Если вы разворачиваете свежую БД для разработки, можно:
-```bash
-npx prisma migrate dev --name init
-```
 
-### 7) Запуск backend (dev)
+### 7) Запуск backend
 ```bash
 npm run dev
 ```
-Backend поднимется на `http://localhost:8080`.
+Backend: `http://localhost:8080`.
 
-### 8) Настройка и запуск frontend
+### 8) Запуск frontend
 ```bash
 cd ../../frontend
 npm install --no-fund --no-audit
 npm run dev
 ```
-Фронтенд будет доступен на `http://localhost:5173`. Прокси в Vite переадресует `/api` и Socket.IO на backend.
+Frontend: `http://localhost:5173`.
 
-## Prod‑развёртывание (кратко)
-- Соберите backend и frontend:
-```bash
-cd backend && npm run build
-cd ../frontend && npm run build
+---
+
+## Создание пользователей и администратора
+- Админ: укажите `ADMIN_EMAIL`/`ADMIN_PASSWORD` в `backend/.env` до первого запуска backend — админ создастся автоматически.
+- Пользователь: зарегистрируйтесь на `/register`, подтвердите email, войдите.
+- Роли: войдите под админом → «Админ → Пользователи» → отметьте роли.
+
+Без SMTP в DEV можно подтвердить email вручную: возьмите токен из таблицы `EmailVerificationToken` и вызовите:
 ```
-- Сервируйте `frontend/dist` через nginx, проксируйте `/api` и `/socket.io` на Node сервер backend.
-- Запускайте backend как systemd‑сервис, задайте переменные в `/etc/environment` или Unit‑файле.
-- Обеспечьте HTTPS (например, nginx + certbot).
+GET {API_BASE_URL}/api/auth/verify-email?token=...
+```
 
-## Конфигурация окружения (backend/.env)
-- `PORT` — порт API (по умолчанию 8080)
-- `BASE_URL` — URL фронтенда (CORS и Socket.IO)
-- `DATABASE_URL` — строка подключения к PostgreSQL
-- `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` — секреты JWT
-- `JWT_ACCESS_TTL`, `JWT_REFRESH_TTL` — сроки жизни токенов (например, 15m / 30d)
-- `SMTP_*` — SMTP (необязательно) для отправки писем
-- `FILES_ROOT` — каталог данных серверов на хосте
-- `ADMIN_EMAIL`, `ADMIN_PASSWORD` — бустрап‑администратор (необязательно)
+### Создание через SSH (CLI)
+См. раздел «Создание пользователя через SSH (CLI)» ниже — готовые однострочники `node -e` для: создать пользователя, выдать ADMIN, сбросить пароль.
+
+---
+
+## Продакшн установка (с SSL, nginx, systemd)
+
+### Сборка
+```bash
+# backend
+cd backend
+npm install --no-fund --no-audit
+npx prisma generate
+npx prisma migrate deploy
+npm run build
+
+# frontend
+cd ../frontend
+npm install --no-fund --no-audit
+npm run build
+```
+
+### systemd unit (backend)
+Создайте `/etc/systemd/system/sparkpanel-backend.service`:
+```ini
+[Unit]
+Description=SparkPanel Backend
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/SparkPanel/backend
+Environment=NODE_ENV=production
+EnvironmentFile=/opt/SparkPanel/backend/.env
+ExecStart=/usr/bin/node dist/server.js
+Restart=always
+User=www-data
+Group=www-data
+
+[Install]
+WantedBy=multi-user.target
+```
+Команды:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now sparkpanel-backend
+sudo systemctl status sparkpanel-backend
+```
+
+### nginx (один домен, фронтенд + прокси API)
+Предположим домен `panel.example.com`, фронтенд файлы в `/opt/SparkPanel/frontend/dist`:
+```nginx
+server {
+  listen 80;
+  server_name panel.example.com;
+  root /opt/SparkPanel/frontend/dist;
+  index index.html;
+
+  location /api {
+    proxy_pass http://127.0.0.1:8080/api;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+
+  location /socket.io/ {
+    proxy_pass http://127.0.0.1:8080/socket.io/;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "Upgrade";
+    proxy_set_header Host $host;
+  }
+
+  location / {
+    try_files $uri /index.html;
+  }
+}
+```
+SSL (Let's Encrypt):
+```bash
+sudo apt-get install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d panel.example.com --agree-tos -m you@example.com --redirect
+```
+
+### Firewall (UFW)
+```bash
+sudo ufw allow OpenSSH
+sudo ufw allow 80
+sudo ufw allow 443
+# для Minecraft-серверов (пример стандартного порта)
+sudo ufw allow 25565/tcp
+sudo ufw enable
+sudo ufw status
+```
+
+### Переменные окружения (прод)
+- `BASE_URL=https://panel.example.com`
+- `API_BASE_URL=https://panel.example.com`
+- корректные `JWT_*` и `DATABASE_URL`
+- `FILES_ROOT` должен существовать и быть доступным пользователю сервиса
+
+---
+
+## Создание пользователя через SSH (CLI)
+1) Перейдите в backend и установите зависимости:
+```bash
+cd /opt/SparkPanel/backend
+npm install --no-fund --no-audit
+```
+2) Создать пользователя (email подтверждён):
+```bash
+node --input-type=module -e "import 'dotenv/config'; import {PrismaClient} from '@prisma/client'; import bcrypt from 'bcryptjs'; const prisma=new PrismaClient(); const email='user@example.com'; const username='user1'; const password='StrongPass123'; const run=async()=>{ const hash=await bcrypt.hash(password,10); let u=await prisma.user.findFirst({where:{OR:[{email},{username}]}}); if(!u){ u=await prisma.user.create({data:{email,username,passwordHash:hash,isEmailVerified:true}});} const role=await prisma.role.upsert({where:{name:'USER'},update:{},create:{name:'USER'}}); await prisma.user.update({where:{id:u.id},data:{roles:{connect:{id:role.id}}}}); console.log('Created/updated user id:',u.id); }; run().finally(()=>prisma.$disconnect());"
+```
+3) Выдать ADMIN:
+```bash
+node --input-type=module -e "import 'dotenv/config'; import {PrismaClient} from '@prisma/client'; const prisma=new PrismaClient(); const login='user@example.com'; const run=async()=>{ const u=await prisma.user.findFirst({where:{OR:[{email:login},{username:login}]}}); if(!u){ throw new Error('User not found'); } const role=await prisma.role.upsert({where:{name:'ADMIN'},update:{},create:{name:'ADMIN'}}); await prisma.user.update({where:{id:u.id},data:{roles:{connect:{id:role.id}}}}); console.log('Granted ADMIN to:',u.id); }; run().finally(()=>prisma.$disconnect());"
+```
+4) Сброс пароля:
+```bash
+node --input-type=module -e "import 'dotenv/config'; import {PrismaClient} from '@prisma/client'; import bcrypt from 'bcryptjs'; const prisma=new PrismaClient(); const login='user@example.com'; const newPassword='NewStrongPass123'; const run=async()=>{ const u=await prisma.user.findFirst({where:{OR:[{email:login},{username:login}]}}); if(!u){ throw new Error('User not found'); } const hash=await bcrypt.hash(newPassword,10); await prisma.user.update({where:{id:u.id},data:{passwordHash:hash}}); await prisma.session.deleteMany({where:{userId:u.id}}); console.log('Password reset for:',u.id); }; run().finally(()=>prisma.$disconnect());"
+```
+
+---
+
+## Обновление панели
+```bash
+cd /opt/SparkPanel
+git pull
+cd backend
+npm install --no-fund --no-audit
+npx prisma migrate deploy
+npm run build
+sudo systemctl restart sparkpanel-backend
+
+cd ../frontend
+npm install --no-fund --no-audit
+npm run build
+# статика nginx уже указывает на dist, перезапуск nginx не обязателен
+```
+
+## Резервные копии и восстановление
+- БД PostgreSQL:
+```bash
+# backup
+docker exec -t <postgres_container> pg_dump -U postgres sparkpanel > /opt/backups/sparkpanel_$(date +%F).sql
+# restore
+cat /opt/backups/sparkpanel_X.sql | docker exec -i <postgres_container> psql -U postgres -d sparkpanel
+```
+- Данные серверов (`FILES_ROOT`):
+```bash
+sudo tar -czf /opt/backups/sparkpanel_files_$(date +%F).tar.gz -C /var/lib/sparkpanel servers
+```
+
+## Траблшутинг (частые ошибки)
+- Docker не запущен: `sudo systemctl status docker`
+- «port is already allocated»: порт сервера занят — измените порт при создании
+- Нет доступа к `FILES_ROOT`: проверьте владельца/права для пользователя, под которым работает сервис
+- Не приходят письма: настройте SMTP в `.env` или подтвердите email вручную (см. выше)
+- CORS/Socket.IO: убедитесь, что `BASE_URL`/`API_BASE_URL` выставлены на реальные домены
+- 401 при refresh: проверьте httpOnly cookie, домен/путь `/api/auth`, `sameSite` в случае кросс‑домена
+
+## Безопасность и лучшие практики
+- Меняйте JWT‑секреты, не храните их в репозитории
+- Включайте HTTPS, обновляйте сертификаты
+- Ограничивайте доступ к серверу по SSH‑ключам, включите UFW
+- Делайте регулярные бэкапы БД и файлов
+- Задавайте лимиты CPU/RAM у контейнеров серверов, следите за диском
+
+## Удаление
+```bash
+# остановка backend
+sudo systemctl stop sparkpanel-backend && sudo systemctl disable sparkpanel-backend
+sudo rm -f /etc/systemd/system/sparkpanel-backend.service && sudo systemctl daemon-reload
+# postgres из compose
+cd /opt/SparkPanel && sudo docker compose down -v
+# файлы
+sudo rm -rf /var/lib/sparkpanel/servers
+```
 
 ## API (кратко)
 - `POST /api/auth/register` — регистрация
@@ -129,7 +339,7 @@ cd ../frontend && npm run build
 - `GET  /api/servers` — сервера пользователя
 - `POST /api/servers` — создать сервер
 - `GET  /api/servers/:id` — детали сервера
-- `POST /api/servers/:id/start|stop` — управление контейнером
+- `POST  /api/servers/:id/start|stop` — управление контейнером
 - `GET  /api/servers/:id/stats` — разовые статусы
 - `GET  /api/servers/:id/files` — листинг
 - `GET  /api/servers/:id/files/download?path=...` — скачать
@@ -138,16 +348,9 @@ cd ../frontend && npm run build
 
 Socket.IO: auth через `auth.token = <access JWT>`, события `watch_server`, `unwatch_server`, ответы `server_stats`.
 
-## Безопасность
-- Пароли — bcrypt
-- JWT access/refresh, refresh в httpOnly cookie (path `/api/auth`)
-- Helmet, CORS (белый список по `BASE_URL`)
-- RBAC (ADMIN/MODERATOR/USER)
-- Аудит‑лог действий
-
-## Ограничения/заметки
-- Управление Minecraft основано на образе `itzg/minecraft-server` и Docker. Порты по умолчанию 25565/tcp, пробрасываются наружу хоста.
-- Для продакшн‑нагрузки настройте лимиты CPU/RAM, дисковые квоты, мониторинг Docker‑демона и резервные копии данных (`FILES_ROOT`).
-
 ## Лицензия
-MIT
+Проект распространяется под лицензией MIT. Полный текст находится в файле `LICENSE`.
+
+© 2025 SparkPanel Authors. Все права защищены.
+
+Ссылка на репозиторий: [GitHub — SparkPanel](https://github.com/SparkPanel/SparkPanel/tree/main)

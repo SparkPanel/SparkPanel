@@ -1,4 +1,4 @@
-# SparkPanel
+# SparkPanel 1.3
 
 [![SparkPanel Logo](https://i.postimg.cc/cHGpXrhV/photo-2025-07-24-16-01-52.png)](https://postimg.cc/5HpKt9Z3)
 

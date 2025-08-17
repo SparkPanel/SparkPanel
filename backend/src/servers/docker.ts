@@ -1,5 +1,9 @@
 import Docker, { ContainerCreateOptions } from 'dockerode';
+<<<<<<< HEAD
 import { config } from '../config';
+=======
+import { config } from '../config.js';
+>>>>>>> ec0bee2093debd91b8e478d60a23a89dd16b809e
 import fs from 'fs/promises';
 import path from 'path';
 

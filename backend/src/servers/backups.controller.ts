@@ -1,14 +1,26 @@
 import { Router } from 'express';
+<<<<<<< HEAD
 import { authRequired } from '../auth/middleware';
 import { prisma } from '../db';
 import { HttpError } from '../utils/errors';
 import { asyncHandler } from '../utils/asyncHandler';
+=======
+import { authRequired } from '../auth/middleware.js';
+import { prisma } from '../db.js';
+import { HttpError } from '../utils/errors.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
+>>>>>>> ec0bee2093debd91b8e478d60a23a89dd16b809e
 import path from 'path';
 import fs from 'fs/promises';
 import fssync from 'fs';
 import tar from 'tar';
+<<<<<<< HEAD
 import { serverDataPath } from './docker';
 import { config } from '../config';
+=======
+import { serverDataPath } from './docker.js';
+import { config } from '../config.js';
+>>>>>>> ec0bee2093debd91b8e478d60a23a89dd16b809e
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import crypto from 'crypto';
 

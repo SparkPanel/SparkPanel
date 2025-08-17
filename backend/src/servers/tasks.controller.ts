@@ -1,8 +1,15 @@
 import { Router } from 'express';
+<<<<<<< HEAD
 import { authRequired } from '../auth/middleware';
 import { prisma } from '../db';
 import { HttpError } from '../utils/errors';
 import { asyncHandler } from '../utils/asyncHandler';
+=======
+import { authRequired } from '../auth/middleware.js';
+import { prisma } from '../db.js';
+import { HttpError } from '../utils/errors.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
+>>>>>>> ec0bee2093debd91b8e478d60a23a89dd16b809e
 import { z } from 'zod';
 import cron from 'node-cron';
 

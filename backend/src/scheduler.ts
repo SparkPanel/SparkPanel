@@ -1,11 +1,20 @@
 import cron from 'node-cron';
+<<<<<<< HEAD
 import { prisma } from './db';
 import { serverDataPath, createOrStartContainer, stopContainer } from './servers/docker';
+=======
+import { prisma } from './db.js';
+import { serverDataPath, createOrStartContainer, stopContainer } from './servers/docker.js';
+>>>>>>> ec0bee2093debd91b8e478d60a23a89dd16b809e
 import tar from 'tar';
 import path from 'path';
 import fs from 'fs/promises';
 import fssync from 'fs';
+<<<<<<< HEAD
 import { config } from './config';
+=======
+import { config } from './config.js';
+>>>>>>> ec0bee2093debd91b8e478d60a23a89dd16b809e
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
 
 const s3 = config.s3.enabled ? new S3Client({

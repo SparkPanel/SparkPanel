@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import http from 'http';
 import { Server as IOServer } from 'socket.io';
+<<<<<<< HEAD
 import { config, isProd } from './config';
 import routes from './routes';
 import { errorMiddleware, notFound } from './utils/errors';
@@ -22,6 +23,16 @@ for (const v of REQUIRED_ENV_VARS) {
     process.exit(1);
   }
 }
+=======
+import { config, isProd } from './config.js';
+import routes from './routes.js';
+import { errorMiddleware } from './utils/errors.js';
+import { prisma } from './db.js';
+import { verifyAccessToken } from './auth/jwt.js';
+import { getStats, followContainerLogs } from './servers/docker.js';
+import { sendRconCommand } from './servers/rcon.js';
+import { startScheduler } from './scheduler.js';
+>>>>>>> ec0bee2093debd91b8e478d60a23a89dd16b809e
 
 async function seed() {
   for (const name of ['ADMIN', 'MODERATOR', 'USER']) {
@@ -37,7 +48,11 @@ async function seed() {
       admin = await prisma.user.create({ data: { email: adminEmail, username: 'admin', passwordHash: hash, isEmailVerified: true } });
       const role = await prisma.role.findUnique({ where: { name: 'ADMIN' } });
       await prisma.user.update({ where: { id: admin.id }, data: { roles: { connect: { id: role!.id } } } });
+<<<<<<< HEAD
       logger.info('Создан админ-пользователь');
+=======
+      console.log('Создан админ-пользователь');
+>>>>>>> ec0bee2093debd91b8e478d60a23a89dd16b809e
     }
   }
 }
@@ -51,7 +66,10 @@ async function bootstrap() {
 
   app.use('/api', routes);
 
+<<<<<<< HEAD
   app.use(notFound);
+=======
+>>>>>>> ec0bee2093debd91b8e478d60a23a89dd16b809e
   app.use(errorMiddleware);
 
   const server = http.createServer(app);
@@ -130,11 +148,19 @@ async function bootstrap() {
   await seed();
 
   server.listen(config.port, () => {
+<<<<<<< HEAD
     logger.info(`SparkPanel backend запущен на порту ${config.port} (${isProd ? 'prod' : 'dev'})`);
+=======
+    console.log(`SparkPanel backend запущен на порту ${config.port} (${isProd ? 'prod' : 'dev'})`);
+>>>>>>> ec0bee2093debd91b8e478d60a23a89dd16b809e
   });
 }
 
 bootstrap().catch((e) => {
+<<<<<<< HEAD
   logger.error(e);
+=======
+  console.error(e);
+>>>>>>> ec0bee2093debd91b8e478d60a23a89dd16b809e
   process.exit(1);
 });

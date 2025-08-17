@@ -1,4 +1,5 @@
 import { Router } from 'express';
+<<<<<<< HEAD
 import { prisma } from '../db';
 import { authRequired } from '../auth/middleware';
 import { HttpError, assert } from '../utils/errors';
@@ -6,6 +7,15 @@ import { z } from 'zod';
 import { audit } from '../audit/audit';
 import { createOrStartContainer, getStats, removeContainer, stopContainer } from './docker';
 import { asyncHandler } from '../utils/asyncHandler';
+=======
+import { prisma } from '../db.js';
+import { authRequired } from '../auth/middleware.js';
+import { HttpError, assert } from '../utils/errors.js';
+import { z } from 'zod';
+import { audit } from '../audit/audit.js';
+import { createOrStartContainer, getStats, removeContainer, stopContainer } from './docker.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
+>>>>>>> ec0bee2093debd91b8e478d60a23a89dd16b809e
 
 const router = Router();
 

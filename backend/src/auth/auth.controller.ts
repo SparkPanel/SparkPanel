@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import { asyncHandler } from '../utils/asyncHandler';
 import { Router, Request, Response } from 'express';
 import { prisma } from '../db';
@@ -10,6 +11,19 @@ import { emailSchema, passwordSchema, usernameSchema } from '../utils/validators
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from './jwt';
 import { sendEmail, resetEmailTemplate, verificationEmailTemplate } from './email';
 import { generateTwoFaSecret, generateQrDataUrl, verifyTwoFaToken } from './twofa';
+=======
+import { Router, Request, Response } from 'express';
+import { prisma } from '../db.js';
+import { z } from 'zod';
+import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
+import { config } from '../config.js';
+import { HttpError, assert } from '../utils/errors.js';
+import { emailSchema, passwordSchema, usernameSchema } from '../utils/validators.js';
+import { signAccessToken, signRefreshToken, verifyRefreshToken } from './jwt.js';
+import { sendEmail, resetEmailTemplate, verificationEmailTemplate } from './email.js';
+import { generateTwoFaSecret, generateQrDataUrl, verifyTwoFaToken } from './twofa.js';
+>>>>>>> ec0bee2093debd91b8e478d60a23a89dd16b809e
 
 const router = Router();
 
@@ -19,7 +33,11 @@ const registerSchema = z.object({
   password: passwordSchema,
 });
 
+<<<<<<< HEAD
 \1asyncHandler(async (\2) => {
+=======
+router.post('/register', async (req: Request, res: Response) => {
+>>>>>>> ec0bee2093debd91b8e478d60a23a89dd16b809e
   const data = registerSchema.parse(req.body);
   const exists = await prisma.user.findFirst({ where: { OR: [{ email: data.email }, { username: data.username }] } });
   assert(!exists, 400, 'Пользователь с таким email или именем уже существует');
@@ -35,7 +53,11 @@ const registerSchema = z.object({
   res.status(201).json({ ok: true });
 });
 
+<<<<<<< HEAD
 \1asyncHandler(async (\2) => {
+=======
+router.get('/verify-email', async (req: Request, res: Response) => {
+>>>>>>> ec0bee2093debd91b8e478d60a23a89dd16b809e
   const token = String(req.query.token || '');
   assert(token, 400, 'Токен обязателен');
   const record = await prisma.emailVerificationToken.findUnique({ where: { token } });
@@ -58,12 +80,19 @@ function setRefreshCookie(res: Response, token: string) {
     secure: config.nodeEnv === 'production',
     maxAge: 1000 * 60 * 60 * 24 * 30,
     path: '/api/auth',
+<<<<<<< HEAD
   
     path: '/api/auth',
   });
 }
 
 \1asyncHandler(async (\2) => {
+=======
+  });
+}
+
+router.post('/login', async (req: Request, res: Response) => {
+>>>>>>> ec0bee2093debd91b8e478d60a23a89dd16b809e
   const data = loginSchema.parse(req.body);
   const user = await prisma.user.findFirst({ where: { OR: [{ email: data.login }, { username: data.login }] }, include: { roles: true } });
   assert(user, 401, 'Неверные учетные данные');
@@ -83,7 +112,11 @@ function setRefreshCookie(res: Response, token: string) {
   res.json({ accessToken: access, user: { id: user!.id, email: user!.email, username: user!.username, roles } });
 });
 
+<<<<<<< HEAD
 \1asyncHandler(async (\2) => {
+=======
+router.post('/refresh', async (req: Request, res: Response) => {
+>>>>>>> ec0bee2093debd91b8e478d60a23a89dd16b809e
   const token = (req as any).cookies?.refresh_token || (req.body as any)?.refreshToken;
   assert(token, 401, 'Нет refresh токена');
   const payload = verifyRefreshToken(token);
@@ -100,7 +133,11 @@ function setRefreshCookie(res: Response, token: string) {
   res.json({ accessToken: newAccess });
 });
 
+<<<<<<< HEAD
 \1asyncHandler(async (\2) => {
+=======
+router.post('/logout', async (req: Request, res: Response) => {
+>>>>>>> ec0bee2093debd91b8e478d60a23a89dd16b809e
   const token = (req as any).cookies?.refresh_token || (req.body as any)?.refreshToken;
   if (token) {
     await prisma.session.deleteMany({ where: { refreshToken: token } });
@@ -139,7 +176,11 @@ export function twoFaProtectedRoutes() {
   return r;
 }
 
+<<<<<<< HEAD
 \1asyncHandler(async (\2) => {
+=======
+router.post('/request-password-reset', async (req, res) => {
+>>>>>>> ec0bee2093debd91b8e478d60a23a89dd16b809e
   const schema = z.object({ login: z.string() });
   const { login } = schema.parse(req.body);
   const user = await prisma.user.findFirst({ where: { OR: [{ email: login }, { username: login }] } });
@@ -153,7 +194,11 @@ export function twoFaProtectedRoutes() {
   res.json({ ok: true });
 });
 
+<<<<<<< HEAD
 \1asyncHandler(async (\2) => {
+=======
+router.post('/reset-password', async (req, res) => {
+>>>>>>> ec0bee2093debd91b8e478d60a23a89dd16b809e
   const schema = z.object({ token: z.string(), password: passwordSchema });
   const { token, password } = schema.parse(req.body);
   const record = await prisma.passwordResetToken.findUnique({ where: { token } });

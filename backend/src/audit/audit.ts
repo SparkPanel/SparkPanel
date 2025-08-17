@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 import { prisma } from '../db';
+=======
+import { prisma } from '../db.js';
+>>>>>>> ec0bee2093debd91b8e478d60a23a89dd16b809e
 import { Request } from 'express';
 
 export async function audit(req: Request, action: string, entity?: string, entityId?: string, metadata?: any) {

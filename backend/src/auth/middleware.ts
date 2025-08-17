@@ -1,6 +1,11 @@
 import { NextFunction, Request, Response } from 'express';
+<<<<<<< HEAD
 import { verifyAccessToken } from './jwt';
 import { HttpError } from '../utils/errors';
+=======
+import { verifyAccessToken } from './jwt.js';
+import { HttpError } from '../utils/errors.js';
+>>>>>>> ec0bee2093debd91b8e478d60a23a89dd16b809e
 
 declare global {
   namespace Express {

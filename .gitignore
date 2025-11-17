@@ -8,3 +8,4 @@ vite.config.ts.*
 plugins/*
 !plugins/.gitkeep
 !plugins/example-plugin
+temp-uploads

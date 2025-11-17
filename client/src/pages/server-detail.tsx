@@ -8,11 +8,20 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/status-badge";
 import { ResourceMeter } from "@/components/resource-meter";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Server, ServerStats, ConsoleLog, FileEntry } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 export default function ServerDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -301,9 +310,17 @@ function FilesTab({ serverId }: { serverId: string }) {
   // Загрузка файла
   const uploadMutation = useMutation({
     mutationFn: async (formData: FormData) => {
+      // Получаем CSRF токен из /api/auth/me
+      const meResponse = await fetch("/api/auth/me", { credentials: "include" });
+      const meData = await meResponse.json();
+      const csrfToken = meData.csrfToken;
+
       const response = await fetch(`/api/servers/${serverId}/files/upload?path=${encodeURIComponent(currentPath)}`, {
         method: "POST",
         credentials: "include",
+        headers: {
+          "X-CSRF-Token": csrfToken,
+        },
         body: formData,
       });
       if (!response.ok) {
@@ -326,10 +343,18 @@ function FilesTab({ serverId }: { serverId: string }) {
   // Создание папки
   const createFolderMutation = useMutation({
     mutationFn: async (name: string) => {
+      // Получаем CSRF токен из /api/auth/me
+      const meResponse = await fetch("/api/auth/me", { credentials: "include" });
+      const meData = await meResponse.json();
+      const csrfToken = meData.csrfToken;
+
       const response = await fetch(`/api/servers/${serverId}/files/folder`, {
         method: "POST",
         credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "X-CSRF-Token": csrfToken,
+        },
         body: JSON.stringify({ name, path: currentPath }),
       });
       if (!response.ok) {

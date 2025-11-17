@@ -290,8 +290,25 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
   });
 
   // Multer для загрузки файлов в серверы (более строгие ограничения)
+  const uploadServerFilesStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+      // Временная папка для загруженных файлов
+      const tempDir = "./temp-uploads";
+      if (!existsSync(tempDir)) {
+        mkdirSync(tempDir, { recursive: true });
+      }
+      cb(null, tempDir);
+    },
+    filename: (req, file, cb) => {
+      // Генерируем уникальное имя файла
+      const uniqueName = `${Date.now()}-${randomBytes(8).toString("hex")}-${basename(file.originalname)}`;
+      cb(null, uniqueName);
+    },
+  });
+
   const uploadServerFiles = multer({
-    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB max для файлов сервера
+    storage: uploadServerFilesStorage,
+    limits: { fileSize: 30 * 1024 * 1024 }, // 30MB max для файлов сервера (ограничение base64)
     fileFilter: (req, file, cb) => {
       // Блокируем опасные расширения
       if (isDangerousFileExtension(file.originalname)) {
@@ -950,6 +967,169 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     } catch (error) {
       console.error("File list error:", error);
       res.status(500).json({ message: "Failed to list files" });
+    }
+  });
+
+  // Загрузить файл в сервер
+  app.post("/api/servers/:id/files/upload", requireAuth, requireCSRF, checkServerAccess, uploadServerFiles.single("file"), async (req, res) => {
+    try {
+      // Валидация UUID
+      if (!isValidUUID(req.params.id)) {
+        return res.status(400).json({ message: "Invalid server ID format" });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+
+      const server = await storage.getServer(req.params.id);
+      if (!server || !server.containerId) {
+        return res.status(404).json({ message: "Server not found or container not created" });
+      }
+
+      const node = await storage.getNode(server.nodeId);
+      if (!node) {
+        return res.status(404).json({ message: "Node not found" });
+      }
+
+      // Санитизация пути и имени файла
+      let targetPath: string;
+      try {
+        const basePath = (req.query.path as string) || "/data";
+        const fileName = basename(sanitizePath(req.file.originalname));
+        targetPath = sanitizePath(`${basePath}/${fileName}`);
+      } catch (error: any) {
+        await logSecurityEvent({
+          type: "path_traversal",
+          ip: req.ip || req.socket.remoteAddress || "unknown",
+          userId: req.session.userId,
+          details: `Attempted path traversal in file upload: ${req.query.path}`,
+          timestamp: new Date(),
+        });
+        // Удаляем временный файл при ошибке
+        if (req.file.path) {
+          await unlinkPromise(req.file.path).catch(() => {});
+        }
+        return res.status(400).json({ message: error.message || "Invalid path" });
+      }
+
+      const container = await dockerManager.getContainer(node, server.containerId);
+
+      // Копируем файл в контейнер используя exec с base64 (простой способ)
+      const fileContent = await readFilePromise(req.file.path);
+      const base64Content = fileContent.toString("base64");
+      
+      // Создаем файл через echo и base64 decode
+      const exec = await container.exec({
+        Cmd: ["/bin/sh", "-c", `echo "${base64Content}" | base64 -d > "${targetPath}"`],
+        AttachStdout: true,
+        AttachStderr: true,
+      });
+
+      const stream = await exec.start({ hijack: true, stdin: false });
+      let output = "";
+      
+      stream.on("data", (chunk: Buffer) => {
+        output += chunk.toString();
+      });
+
+      await new Promise<void>((resolve) => {
+        stream.on("end", resolve);
+        stream.on("error", () => resolve());
+        setTimeout(() => resolve(), 30000); // 30 секунд максимум
+      });
+
+      // Удаляем временный файл
+      await unlinkPromise(req.file.path);
+
+      await storage.addActivity({
+        type: "server_command",
+        title: "File Uploaded",
+        description: `File uploaded to server: ${basename(targetPath)}`,
+        timestamp: new Date(),
+        userId: req.session.userId,
+      }).catch(() => {});
+
+      res.json({ message: "File uploaded successfully", path: targetPath });
+    } catch (error: any) {
+      console.error("File upload error:", error);
+      // Удаляем временный файл при ошибке
+      if (req.file?.path) {
+        await unlinkPromise(req.file.path).catch(() => {});
+      }
+      res.status(500).json({ message: error.message || "Failed to upload file" });
+    }
+  });
+
+  // Создать папку в сервере
+  app.post("/api/servers/:id/files/folder", requireAuth, requireCSRF, checkServerAccess, async (req, res) => {
+    try {
+      // Валидация UUID
+      if (!isValidUUID(req.params.id)) {
+        return res.status(400).json({ message: "Invalid server ID format" });
+      }
+
+      const server = await storage.getServer(req.params.id);
+      if (!server || !server.containerId) {
+        return res.status(404).json({ message: "Server not found or container not created" });
+      }
+
+      const node = await storage.getNode(server.nodeId);
+      if (!node) {
+        return res.status(404).json({ message: "Node not found" });
+      }
+
+      // Санитизация пути и имени папки
+      let targetPath: string;
+      try {
+        const basePath = (req.body.path as string) || "/data";
+        const folderName = sanitizePath(req.body.name as string || "New Folder");
+        targetPath = sanitizePath(`${basePath}/${folderName}`);
+      } catch (error: any) {
+        await logSecurityEvent({
+          type: "path_traversal",
+          ip: req.ip || req.socket.remoteAddress || "unknown",
+          userId: req.session.userId,
+          details: `Attempted path traversal in folder creation: ${req.body.path}`,
+          timestamp: new Date(),
+        });
+        return res.status(400).json({ message: error.message || "Invalid path or folder name" });
+      }
+
+      const container = await dockerManager.getContainer(node, server.containerId);
+
+      // Создаем папку через exec
+      const exec = await container.exec({
+        Cmd: ["/bin/sh", "-c", `mkdir -p "${targetPath}"`],
+        AttachStdout: true,
+        AttachStderr: true,
+      });
+
+      const stream = await exec.start({ hijack: true, stdin: false });
+      
+      let output = "";
+      stream.on("data", (chunk: Buffer) => {
+        output += chunk.toString();
+      });
+
+      await new Promise<void>((resolve) => {
+        stream.on("end", resolve);
+        stream.on("error", () => resolve());
+        setTimeout(() => resolve(), 5000);
+      });
+
+      await storage.addActivity({
+        type: "server_command",
+        title: "Folder Created",
+        description: `Folder created on server: ${targetPath}`,
+        timestamp: new Date(),
+        userId: req.session.userId,
+      }).catch(() => {});
+
+      res.json({ message: "Folder created successfully", path: targetPath });
+    } catch (error: any) {
+      console.error("Folder creation error:", error);
+      res.status(500).json({ message: error.message || "Failed to create folder" });
     }
   });
 

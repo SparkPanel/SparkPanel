@@ -19,8 +19,8 @@ import multer from "multer";
 import { join } from "path";
 import { existsSync, mkdirSync, createWriteStream } from "fs";
 import { createReadStream } from "fs";
-import { promisify } from "util";
 import { pipeline } from "stream/promises";
+import { readFile as readFilePromise, writeFile as writeFilePromise, unlink as unlinkPromise } from "fs/promises";
 
 // Session store
 const MemoryStore = memorystore(session);
@@ -337,7 +337,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       await pipeline(readStream, writeStream);
       
       // Удаляем временный файл
-      await promisify(require("fs").unlink)(file.path);
+      await unlinkPromise(file.path);
 
       // Создаем или обновляем manifest.json
       const manifestPath = join(pluginPath, "manifest.json");
@@ -354,11 +354,11 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       };
 
       if (existsSync(manifestPath)) {
-        const existingManifest = JSON.parse(await promisify(require("fs").readFile)(manifestPath, "utf-8"));
+        const existingManifest = JSON.parse(await readFilePromise(manifestPath, "utf-8"));
         manifest = { ...existingManifest, ...manifest };
       }
 
-      await promisify(require("fs").writeFile)(manifestPath, JSON.stringify(manifest, null, 2), "utf-8");
+      await writeFilePromise(manifestPath, JSON.stringify(manifest, null, 2), "utf-8");
 
       // Загружаем плагин в менеджер
       await pluginManager.loadPlugin(pluginId);
@@ -1349,7 +1349,7 @@ async function createGameServerContainer(server: Server, node: any) {
           console.warn("Failed to pull image, will try to use cached version:", err.message);
           return resolve(null);
         }
-        docker.modem.followProgress(stream, (err: Error) => {
+        docker.modem.followProgress(stream, (err: Error | null) => {
           if (err) {
             console.warn("Error during pull, will try to use cached version:", err.message);
             return resolve(null);

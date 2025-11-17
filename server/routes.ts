@@ -275,7 +275,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     },
   });
 
-  const upload = multer({
+  const uploadPlugins = multer({
     storage: multerStorage,
     limits: { fileSize: 100 * 1024 * 1024 }, // 100MB max
     fileFilter: (req, file, cb) => {
@@ -286,6 +286,19 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       } else {
         cb(new Error("Invalid file type. Allowed: .js, .ts, .py, .jar, .zip, .tar.gz"));
       }
+    },
+  });
+
+  // Multer для загрузки файлов в серверы (более строгие ограничения)
+  const uploadServerFiles = multer({
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB max для файлов сервера
+    fileFilter: (req, file, cb) => {
+      // Блокируем опасные расширения
+      if (isDangerousFileExtension(file.originalname)) {
+        cb(new Error("File type is not allowed for security reasons"));
+        return;
+      }
+      cb(null, true);
     },
   });
 
@@ -315,7 +328,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
   });
 
   // Загрузить плагин (файл)
-  app.post("/api/plugins/upload", requireAuth, requireCSRF, upload.single("plugin"), async (req, res) => {
+  app.post("/api/plugins/upload", requireAuth, requireCSRF, uploadPlugins.single("plugin"), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });

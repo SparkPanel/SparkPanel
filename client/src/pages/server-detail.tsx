@@ -287,21 +287,179 @@ function ConsoleTab({ serverId, isRunning }: { serverId: string; isRunning: bool
 }
 
 function FilesTab({ serverId }: { serverId: string }) {
-  const { data: files, isLoading } = useQuery<FileEntry[]>({
+  const { data: files, isLoading, refetch } = useQuery<FileEntry[]>({
     queryKey: ["/api/servers", serverId, "files"],
   });
+
+  const { toast } = useToast();
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [folderDialogOpen, setFolderDialogOpen] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [folderName, setFolderName] = useState("");
+  const [currentPath, setCurrentPath] = useState("/data");
+
+  // Загрузка файла
+  const uploadMutation = useMutation({
+    mutationFn: async (formData: FormData) => {
+      const response = await fetch(`/api/servers/${serverId}/files/upload?path=${encodeURIComponent(currentPath)}`, {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to upload file");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({ title: "File uploaded", description: "File has been uploaded successfully" });
+      setUploadDialogOpen(false);
+      setSelectedFile(null);
+      refetch();
+    },
+    onError: (error: any) => {
+      toast({ title: "Upload failed", description: error.message || "Failed to upload file", variant: "destructive" });
+    },
+  });
+
+  // Создание папки
+  const createFolderMutation = useMutation({
+    mutationFn: async (name: string) => {
+      const response = await fetch(`/api/servers/${serverId}/files/folder`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, path: currentPath }),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to create folder");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Folder created", description: "Folder has been created successfully" });
+      setFolderDialogOpen(false);
+      setFolderName("");
+      refetch();
+    },
+    onError: (error: any) => {
+      toast({ title: "Creation failed", description: error.message || "Failed to create folder", variant: "destructive" });
+    },
+  });
+
+  const handleUpload = () => {
+    if (!selectedFile) {
+      toast({ title: "No file selected", description: "Please select a file to upload", variant: "destructive" });
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", selectedFile);
+    uploadMutation.mutate(formData);
+  };
+
+  const handleCreateFolder = () => {
+    if (!folderName.trim()) {
+      toast({ title: "Invalid name", description: "Please enter a folder name", variant: "destructive" });
+      return;
+    }
+    createFolderMutation.mutate(folderName.trim());
+  };
 
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
         <CardTitle>File Manager</CardTitle>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" data-testid="button-upload-file">
-            Upload File
-          </Button>
-          <Button variant="outline" size="sm" data-testid="button-new-folder">
-            New Folder
-          </Button>
+          <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm" data-testid="button-upload-file">
+                Upload File
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Upload File</DialogTitle>
+                <DialogDescription>Upload a file to the server</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label>File</Label>
+                  <Input
+                    type="file"
+                    onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                    className="mt-2"
+                  />
+                  {selectedFile && (
+                    <p className="text-sm text-muted-foreground mt-2">
+                      Selected: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(2)} KB)
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <Label>Path</Label>
+                  <Input
+                    value={currentPath}
+                    onChange={(e) => setCurrentPath(e.target.value)}
+                    className="mt-2"
+                    placeholder="/data"
+                  />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setUploadDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button onClick={handleUpload} disabled={uploadMutation.isPending || !selectedFile}>
+                    {uploadMutation.isPending ? "Uploading..." : "Upload"}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={folderDialogOpen} onOpenChange={setFolderDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm" data-testid="button-new-folder">
+                New Folder
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create Folder</DialogTitle>
+                <DialogDescription>Create a new folder on the server</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label>Folder Name</Label>
+                  <Input
+                    value={folderName}
+                    onChange={(e) => setFolderName(e.target.value)}
+                    className="mt-2"
+                    placeholder="New Folder"
+                  />
+                </div>
+                <div>
+                  <Label>Path</Label>
+                  <Input
+                    value={currentPath}
+                    onChange={(e) => setCurrentPath(e.target.value)}
+                    className="mt-2"
+                    placeholder="/data"
+                  />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setFolderDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button onClick={handleCreateFolder} disabled={createFolderMutation.isPending || !folderName.trim()}>
+                    {createFolderMutation.isPending ? "Creating..." : "Create"}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
       </CardHeader>
       <CardContent>

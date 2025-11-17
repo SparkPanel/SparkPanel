@@ -4,6 +4,19 @@
 
 **Версия: 1.0**
 
+## Плагины
+
+SparkPanel поддерживает систему плагинов для расширения функциональности. Пользователи могут создавать и загружать собственные плагины через веб-интерфейс.
+
+**Поддерживаемые типы плагинов:**
+- JavaScript/TypeScript (`.js`, `.ts`)
+- Python (`.py`)
+- Java (`.jar`)
+
+**Документация:** См. `PLUGINS_README.md` для подробной документации по созданию плагинов.
+
+**Примеры плагинов:** См. папку `plugins/example-plugin/` для примера.
+
 ## Overview
 
 SparkPanel is a professional game server management platform that enables users to manage Docker-based game servers through a modern web interface. The application provides real-time monitoring, console access, file management, and resource control for multiple game server types including Minecraft, CS:GO, Rust, ARK, Valheim, Terraria, and Garry's Mod.

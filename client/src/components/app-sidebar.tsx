@@ -1,4 +1,4 @@
-import { Home, Server, HardDrive, Settings, LogOut, Activity } from "lucide-react";
+import { Home, Server, HardDrive, Settings, LogOut, Activity, Package } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import {
   Sidebar,
@@ -39,6 +39,12 @@ const menuItems = [
     url: "/activity",
     icon: Activity,
     testId: "link-activity",
+  },
+  {
+    title: "Plugins",
+    url: "/plugins",
+    icon: Package,
+    testId: "link-plugins",
   },
 ];
 

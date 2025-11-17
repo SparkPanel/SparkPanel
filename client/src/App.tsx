@@ -13,6 +13,7 @@ import ServerDetailPage from "@/pages/server-detail";
 import NodesPage from "@/pages/nodes";
 import SettingsPage from "@/pages/settings";
 import ActivityPage from "@/pages/activity";
+import PluginsPage from "@/pages/plugins";
 import NotFound from "@/pages/not-found";
 
 function Router({ username, onLogout }: { username: string; onLogout: () => void }) {
@@ -23,6 +24,7 @@ function Router({ username, onLogout }: { username: string; onLogout: () => void
       <Route path="/servers/:id" component={ServerDetailPage} />
       <Route path="/nodes" component={NodesPage} />
       <Route path="/activity" component={ActivityPage} />
+      <Route path="/plugins" component={PluginsPage} />
       <Route path="/settings">
         {() => <SettingsPage username={username} />}
       </Route>

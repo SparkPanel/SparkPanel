@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server as HTTPServer } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { storage } from "./storage";
+import { basename, extname } from "path";
 import bcrypt from "bcryptjs";
 import { dockerManager } from "./docker-manager";
 import { statsCollector } from "./stats-collector";
@@ -13,6 +14,13 @@ import { sanitizeCommand, sanitizePath, sanitizeUsername, isValidUUID, escapeHtm
 import { randomBytes } from "crypto";
 import { generateCSRFToken, verifyCSRFToken, removeCSRFToken, refreshCSRFToken } from "./csrf";
 import { logSecurityEvent, isSuspiciousCommand, isSuspiciousPath, isDangerousFileExtension } from "./security-logger";
+import { pluginManager } from "./plugins/plugin-manager";
+import multer from "multer";
+import { join } from "path";
+import { existsSync, mkdirSync, createWriteStream } from "fs";
+import { createReadStream } from "fs";
+import { promisify } from "util";
+import { pipeline } from "stream/promises";
 
 // Session store
 const MemoryStore = memorystore(session);
@@ -247,6 +255,152 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       version: "1.0",
       description: "Game Server Management Platform",
     });
+  });
+
+  // ========== PLUGINS API ==========
+  
+  // Настройка multer для загрузки плагинов
+  const pluginsDir = "./plugins";
+  if (!existsSync(pluginsDir)) {
+    mkdirSync(pluginsDir, { recursive: true });
+  }
+
+  const multerStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+      cb(null, pluginsDir);
+    },
+    filename: (req, file, cb) => {
+      // Сохраняем оригинальное имя файла
+      cb(null, file.originalname);
+    },
+  });
+
+  const upload = multer({
+    storage: multerStorage,
+    limits: { fileSize: 100 * 1024 * 1024 }, // 100MB max
+    fileFilter: (req, file, cb) => {
+      // Разрешаем только определенные типы файлов
+      const allowedTypes = /\.(js|ts|py|jar|zip|tar\.gz)$/i;
+      if (allowedTypes.test(file.originalname)) {
+        cb(null, true);
+      } else {
+        cb(new Error("Invalid file type. Allowed: .js, .ts, .py, .jar, .zip, .tar.gz"));
+      }
+    },
+  });
+
+  // Получить список всех плагинов
+  app.get("/api/plugins", requireAuth, async (req, res) => {
+    try {
+      const plugins = await pluginManager.getAllPlugins();
+      res.json(plugins);
+    } catch (error: any) {
+      console.error("Failed to get plugins:", error);
+      res.status(500).json({ message: error.message || "Failed to get plugins" });
+    }
+  });
+
+  // Получить информацию о конкретном плагине
+  app.get("/api/plugins/:id", requireAuth, async (req, res) => {
+    try {
+      const plugin = pluginManager.getPlugin(req.params.id);
+      if (!plugin) {
+        return res.status(404).json({ message: "Plugin not found" });
+      }
+      res.json(plugin);
+    } catch (error: any) {
+      console.error("Failed to get plugin:", error);
+      res.status(500).json({ message: error.message || "Failed to get plugin" });
+    }
+  });
+
+  // Загрузить плагин (файл)
+  app.post("/api/plugins/upload", requireAuth, requireCSRF, upload.single("plugin"), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+
+      const file = req.file;
+      const pluginId = req.body.pluginId || basename(file.originalname, extname(file.originalname));
+      const pluginPath = join(pluginsDir, pluginId);
+
+      // Создаем директорию для плагина
+      if (!existsSync(pluginPath)) {
+        mkdirSync(pluginPath, { recursive: true });
+      }
+
+      // Перемещаем файл в папку плагина
+      const finalPath = join(pluginPath, file.originalname);
+      const readStream = createReadStream(file.path);
+      const writeStream = createWriteStream(finalPath);
+      await pipeline(readStream, writeStream);
+      
+      // Удаляем временный файл
+      await promisify(require("fs").unlink)(file.path);
+
+      // Создаем или обновляем manifest.json
+      const manifestPath = join(pluginPath, "manifest.json");
+      const fileExt = extname(file.originalname).toLowerCase();
+      let manifest: any = {
+        id: pluginId,
+        name: req.body.name || pluginId,
+        version: req.body.version || "1.0.0",
+        description: req.body.description || "",
+        author: req.body.author || "Unknown",
+        type: req.body.type || (fileExt === ".py" ? "python" : fileExt === ".jar" ? "jar" : fileExt === ".ts" ? "typescript" : "javascript"),
+        enabled: false,
+        main: file.originalname,
+      };
+
+      if (existsSync(manifestPath)) {
+        const existingManifest = JSON.parse(await promisify(require("fs").readFile)(manifestPath, "utf-8"));
+        manifest = { ...existingManifest, ...manifest };
+      }
+
+      await promisify(require("fs").writeFile)(manifestPath, JSON.stringify(manifest, null, 2), "utf-8");
+
+      // Загружаем плагин в менеджер
+      await pluginManager.loadPlugin(pluginId);
+
+      res.json({ message: "Plugin uploaded successfully", plugin: manifest });
+    } catch (error: any) {
+      console.error("Failed to upload plugin:", error);
+      res.status(500).json({ message: error.message || "Failed to upload plugin" });
+    }
+  });
+
+  // Включить плагин
+  app.post("/api/plugins/:id/enable", requireAuth, requireCSRF, async (req, res) => {
+    try {
+      await pluginManager.enablePlugin(req.params.id);
+      res.json({ message: "Plugin enabled" });
+    } catch (error: any) {
+      console.error("Failed to enable plugin:", error);
+      res.status(500).json({ message: error.message || "Failed to enable plugin" });
+    }
+  });
+
+  // Отключить плагин
+  app.post("/api/plugins/:id/disable", requireAuth, requireCSRF, async (req, res) => {
+    try {
+      await pluginManager.disablePlugin(req.params.id);
+      res.json({ message: "Plugin disabled" });
+    } catch (error: any) {
+      console.error("Failed to disable plugin:", error);
+      res.status(500).json({ message: error.message || "Failed to disable plugin" });
+    }
+  });
+
+  // Удалить плагин
+  app.delete("/api/plugins/:id", requireAuth, requireCSRF, async (req, res) => {
+    try {
+      await pluginManager.deletePlugin(req.params.id);
+      res.json({ message: "Plugin deleted" });
+    } catch (error: any) {
+      console.error("Failed to delete plugin:", error);
+      res.status(500).json({ message: error.message || "Failed to delete plugin" });
+    }
   });
 
   app.post("/api/auth/change-password", requireAuth, requireCSRF, async (req, res) => {

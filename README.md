@@ -36,8 +36,6 @@ The system follows a three-tier architecture with a React frontend, Express back
 - Consistent design system through Tailwind CSS with custom theming
 - Material Design-inspired approach optimized for data-heavy applications
 
-**Design Philosophy**: Professional utility interface inspired by Pterodactyl, Portainer, and Docker Desktop. Emphasizes information density, clear visual hierarchy, and operational efficiency. Uses Inter for UI text and JetBrains Mono for console/logs/code.
-
 **State Management**: 
 - TanStack Query (React Query) for server state management with automatic caching and refetching
 - React hooks for local component state

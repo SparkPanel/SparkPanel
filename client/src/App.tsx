@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Switch, Route } from "wouter";
-import { queryClient } from "./lib/queryClient";
+import { queryClient, clearCSRFTokenCache } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -14,9 +14,17 @@ import NodesPage from "@/pages/nodes";
 import SettingsPage from "@/pages/settings";
 import ActivityPage from "@/pages/activity";
 import PluginsPage from "@/pages/plugins";
+import UsersPage from "@/pages/users";
 import NotFound from "@/pages/not-found";
 
-function Router({ username, onLogout }: { username: string; onLogout: () => void }) {
+interface User {
+  id: string;
+  username: string;
+  role: "admin" | "operator" | "viewer";
+  allowedServers?: string[] | null;
+}
+
+function Router({ user, onLogout }: { user: User; onLogout: () => void }) {
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
@@ -25,8 +33,9 @@ function Router({ username, onLogout }: { username: string; onLogout: () => void
       <Route path="/nodes" component={NodesPage} />
       <Route path="/activity" component={ActivityPage} />
       <Route path="/plugins" component={PluginsPage} />
+      {user.role === "admin" && <Route path="/users" component={UsersPage} />}
       <Route path="/settings">
-        {() => <SettingsPage username={username} />}
+        {() => <SettingsPage username={user.username} />}
       </Route>
       <Route component={NotFound} />
     </Switch>
@@ -34,7 +43,7 @@ function Router({ username, onLogout }: { username: string; onLogout: () => void
 }
 
 function App() {
-  const [username, setUsername] = useState<string | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
   useEffect(() => {
@@ -45,7 +54,7 @@ function App() {
         });
         if (response.ok) {
           const data = await response.json();
-          setUsername(data.username);
+          setUser(data.user);
         }
       } catch (error) {
         console.error("Auth check failed:", error);
@@ -57,8 +66,8 @@ function App() {
     checkAuth();
   }, []);
 
-  const handleLogin = (user: string) => {
-    setUsername(user);
+  const handleLogin = (userData: User) => {
+    setUser(userData);
   };
 
   const handleLogout = async () => {
@@ -70,7 +79,8 @@ function App() {
     } catch (error) {
       console.error("Logout failed:", error);
     }
-    setUsername(null);
+    clearCSRFTokenCache();
+    setUser(null);
   };
 
   if (isCheckingAuth) {
@@ -84,7 +94,7 @@ function App() {
     );
   }
 
-  if (!username) {
+  if (!user) {
     return (
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
@@ -105,13 +115,13 @@ function App() {
       <TooltipProvider>
         <SidebarProvider style={sidebarStyle as React.CSSProperties}>
           <div className="flex h-screen w-full">
-            <AppSidebar username={username} onLogout={handleLogout} />
+            <AppSidebar user={user} onLogout={handleLogout} />
             <div className="flex flex-col flex-1 overflow-hidden">
               <header className="flex items-center justify-between p-2 border-b border-border shrink-0">
                 <SidebarTrigger data-testid="button-sidebar-toggle" />
               </header>
               <main className="flex-1 overflow-y-auto">
-                <Router username={username} onLogout={handleLogout} />
+                <Router user={user} onLogout={handleLogout} />
               </main>
             </div>
           </div>

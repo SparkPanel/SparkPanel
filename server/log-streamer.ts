@@ -1,14 +1,15 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { dockerManager } from "./docker-manager";
 import { storage } from "./storage";
-import type { Server, ConsoleLog } from "@shared/schema";
+import type { ConsoleLog } from "@shared/schema";
+import type { Readable, Duplex } from "stream";
 
 /**
  * Управляет потоковой передачей логов из Docker контейнеров через WebSocket
  */
 export class LogStreamer {
-  private logStreams: Map<string, NodeJS.ReadableStream> = new Map();
-  private commandStreams: Map<string, NodeJS.ReadWriteStream> = new Map(); // Потоки для отправки команд
+  private logStreams: Map<string, Readable> = new Map();
+  private commandStreams: Map<string, Duplex> = new Map(); // Потоки для отправки команд
   private subscribers: Map<string, Set<WebSocket>> = new Map(); // Отслеживаем подписчиков для каждого сервера
 
   /**
@@ -67,7 +68,7 @@ export class LogStreamer {
         stdout: true,
         stderr: true,
         logs: false, // Получаем только новые логи
-      });
+      }) as unknown as Readable;
 
       // Обрабатываем поток данных
       const dataHandler = (chunk: Buffer) => {
@@ -178,14 +179,14 @@ export class LogStreamer {
       
       if (!commandStream) {
         // Создаем новый attach поток для отправки команд
-        commandStream = await container.attach({
+        const newCommandStream = await container.attach({
           stream: true,
           stdin: true,
           stdout: true,
           stderr: true,
-        }) as any;
+        }) as unknown as Duplex;
         
-        this.commandStreams.set(serverId, commandStream);
+        this.commandStreams.set(serverId, newCommandStream);
         
         // Обрабатываем ответы от контейнера
         const commandDataHandler = (chunk: Buffer) => {
@@ -206,27 +207,30 @@ export class LogStreamer {
           });
         };
         
-        const commandErrorHandler = (error: Error) => {
-          console.error(`Command stream error for server ${serverId}:`, error);
-          // Очищаем обработчики для предотвращения утечек памяти
-          commandStream.removeAllListeners();
-          this.commandStreams.delete(serverId);
-        };
-        
-        const commandEndHandler = () => {
-          console.log(`Command stream ended for server ${serverId}`);
-          // Очищаем обработчики для предотвращения утечек памяти
-          commandStream.removeAllListeners();
+        const cleanupStream = () => {
+          newCommandStream.removeAllListeners();
           this.commandStreams.delete(serverId);
         };
 
-        commandStream.on("data", commandDataHandler);
-        commandStream.on("error", commandErrorHandler);
-        commandStream.on("end", commandEndHandler);
+        newCommandStream.on("data", commandDataHandler);
+        newCommandStream.on("error", (error: Error) => {
+          console.error(`Command stream error for server ${serverId}:`, error);
+          cleanupStream();
+        });
+        newCommandStream.on("end", () => {
+          console.log(`Command stream ended for server ${serverId}`);
+          cleanupStream();
+        });
+
+        commandStream = newCommandStream;
+      }
+
+      if (!commandStream) {
+        throw new Error("Command stream could not be initialized");
       }
       
       // Отправляем команду в stdin контейнера
-      if (commandStream.writable) {
+      if (commandStream && commandStream.writable) {
         commandStream.write(command + "\n");
       } else {
         throw new Error("Command stream is not writable");

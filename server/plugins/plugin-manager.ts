@@ -2,10 +2,11 @@
  * Система управления плагинами для SparkPanel
  */
 
-import { readdir, readFile, writeFile, mkdir, unlink, stat } from "fs/promises";
+import { readdir, readFile, writeFile, mkdir, rm } from "fs/promises";
 import { join, extname, basename } from "path";
 import { existsSync } from "fs";
 import { spawn, ChildProcess } from "child_process";
+import { createRequire } from "module";
 
 export interface PluginManifest {
   id: string;
@@ -195,7 +196,6 @@ export class PluginManager {
         pluginModule = await import(mainFile);
       } catch (esmError) {
         // Если не получилось, пробуем CommonJS через require
-        const { createRequire } = await import("module");
         const require = createRequire(import.meta.url);
         pluginModule = require(mainFile);
       }
@@ -332,11 +332,12 @@ export class PluginManager {
 
     const pluginPath = join(this.pluginsDir, pluginId);
     if (existsSync(pluginPath)) {
-      const files = await readdir(pluginPath);
-      for (const file of files) {
-        await unlink(join(pluginPath, file));
+      try {
+        await rm(pluginPath, { recursive: true, force: true });
+      } catch (error) {
+        console.error(`Failed to remove plugin directory ${pluginPath}:`, error);
+        throw error;
       }
-      await unlink(pluginPath);
     }
 
     this.pluginManifests.delete(pluginId);

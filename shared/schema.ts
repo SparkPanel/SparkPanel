@@ -3,21 +3,81 @@ import { pgTable, text, varchar, integer, timestamp, boolean, jsonb } from "driz
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+export const userRoles = ["admin", "operator", "viewer"] as const;
+export type UserRole = typeof userRoles[number];
+
+export const userPermissions = [
+  "servers.view",
+  "servers.control",
+  "servers.manage",
+  "nodes.manage",
+  "plugins.manage",
+  "activity.view",
+  "users.manage",
+] as const;
+export type UserPermission = typeof userPermissions[number];
+
 // Users table
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
+  role: text("role").notNull().default("admin"),
+  permissions: jsonb("permissions")
+    .$type<UserPermission[]>()
+    .notNull()
+    .default(sql`'[]'::jsonb`),
+  allowedServerIds: jsonb("allowed_server_ids").$type<string[] | null>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
+  role: true,
+  permissions: true,
+  allowedServerIds: true,
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
+
+const permissionEnum = z.enum(userPermissions);
+const roleEnum = z.enum(userRoles);
+
+export const createUserSchema = z.object({
+  username: z.string().min(3).max(50),
+  password: z.string().min(4),
+  role: roleEnum,
+  permissions: z.array(permissionEnum).default([]),
+  allowedServerIds: z.array(z.string().uuid()).default([]),
+  allServersAccess: z.boolean().default(true),
+});
+
+export const updateUserSchema = z.object({
+  username: z.string().min(3).max(50).optional(),
+  password: z.string().min(4).optional(),
+  role: roleEnum.optional(),
+  permissions: z.array(permissionEnum).optional(),
+  allowedServerIds: z.array(z.string().uuid()).optional(),
+  allServersAccess: z.boolean().optional(),
+});
+
+export interface UserProfile {
+  id: string;
+  username: string;
+  role: UserRole;
+  permissions: UserPermission[];
+  allowedServerIds: string[] | null;
+  hasAllServerAccess: boolean;
+  createdAt: string;
+}
+
+export interface AuthSession {
+  user: UserProfile;
+  csrfToken: string;
+  version?: string;
+}
 
 // Nodes table (physical/virtual servers)
 export const nodes = pgTable("nodes", {
@@ -105,6 +165,9 @@ export const activityTypes = [
   "node_delete",
   "user_login",
   "password_change",
+  "user_create",
+  "user_update",
+  "user_delete",
   "security_event", // События безопасности (попытки взлома, CSRF атаки и т.д.)
 ] as const;
 

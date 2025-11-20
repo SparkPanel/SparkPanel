@@ -7,7 +7,24 @@ import bcrypt from "bcryptjs";
 import { dockerManager } from "./docker-manager";
 import { statsCollector } from "./stats-collector";
 import { logStreamer } from "./log-streamer";
-import { insertServerSchema, insertNodeSchema, loginSchema, changePasswordSchema, serverCommandSchema, type Server, type ConsoleLog, type FileEntry, type Activity } from "@shared/schema";
+import {
+  insertServerSchema,
+  insertNodeSchema,
+  loginSchema,
+  changePasswordSchema,
+  serverCommandSchema,
+  createUserSchema,
+  updateUserSchema,
+  userPermissions,
+  type Server,
+  type ConsoleLog,
+  type FileEntry,
+  type Activity,
+  type User,
+  type UserPermission,
+  type UserRole,
+  type UserProfile,
+} from "@shared/schema";
 import session from "express-session";
 import memorystore from "memorystore";
 import { sanitizeCommand, sanitizePath, sanitizeUsername, isValidUUID, escapeHtml, loginRateLimiter, commandRateLimiter } from "./security";
@@ -67,48 +84,148 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
   
   app.use(sessionMiddleware);
 
+  const ALL_PERMISSIONS: UserPermission[] = [...userPermissions];
+
+  const ROLE_DEFAULT_PERMISSIONS: Record<UserRole, UserPermission[]> = {
+    admin: ALL_PERMISSIONS,
+    operator: ["servers.view", "servers.control", "activity.view"],
+    viewer: ["servers.view", "activity.view"],
+  };
+
+  const unique = <T,>(items: T[]): T[] => Array.from(new Set(items));
+
+  const resolvePermissionsForRole = (role: UserRole, provided?: UserPermission[]): UserPermission[] => {
+    if (role === "admin") {
+      return [...ALL_PERMISSIONS];
+    }
+    const base = provided && provided.length ? provided : ROLE_DEFAULT_PERMISSIONS[role] ?? [];
+    return unique(base.filter((perm) => ALL_PERMISSIONS.includes(perm)));
+  };
+
+  const hasPermission = (user: User, permission: UserPermission): boolean => {
+    if (user.role === "admin") {
+      return true;
+    }
+    return user.permissions.includes(permission);
+  };
+
+  const requirePermission = (permission: UserPermission) => (req: Request, res: Response, next: Function) => {
+    const user = req.currentUser;
+    if (!user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    if (!hasPermission(user, permission)) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+    next();
+  };
+
+  const userHasServerAccess = (user: User, serverId: string): boolean => {
+    if (user.role === "admin" || user.allowedServerIds === null) {
+      return true;
+    }
+    return (user.allowedServerIds || []).includes(serverId);
+  };
+
+  const filterServersForUser = (servers: Server[], user: User): Server[] => {
+    if (user.role === "admin" || user.allowedServerIds === null) {
+      return servers;
+    }
+    const allowed = new Set(user.allowedServerIds || []);
+    return servers.filter((server) => allowed.has(server.id));
+  };
+
+  const serializeUser = (user: User): UserProfile => ({
+    id: user.id,
+    username: user.username,
+    role: user.role as UserRole,
+    permissions: user.role === "admin" ? [...ALL_PERMISSIONS] : user.permissions,
+    allowedServerIds: user.allowedServerIds,
+    hasAllServerAccess: user.allowedServerIds === null,
+    createdAt: user.createdAt instanceof Date ? user.createdAt.toISOString() : new Date(user.createdAt).toISOString(),
+  });
+
+  const resolveAllowedServerIds = async (
+    allServersAccess: boolean,
+    serverIds?: string[],
+  ): Promise<string[] | null> => {
+    if (allServersAccess) {
+      return null;
+    }
+    if (!serverIds || serverIds.length === 0) {
+      return [];
+    }
+    const uniqueIds = unique(serverIds.filter((id) => isValidUUID(id)));
+    if (uniqueIds.length === 0) {
+      return [];
+    }
+    const existingServers = await storage.getAllServers();
+    const validIds = new Set(existingServers.map((server) => server.id));
+    return uniqueIds.filter((id) => validIds.has(id));
+  };
+
+  const isLastAdmin = async (userId: string): Promise<boolean> => {
+    const users = await storage.getAllUsers();
+    const adminCount = users.filter((user) => user.role === "admin").length;
+    const target = users.find((user) => user.id === userId);
+    return !!target && target.role === "admin" && adminCount <= 1;
+  };
+
   // CSRF middleware для защиты от межсайтовых запросов
   const requireCSRF = async (req: Request, res: Response, next: Function) => {
     // GET, HEAD, OPTIONS запросы не требуют CSRF токен
-    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+    if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") {
       return next();
     }
 
-    // Для аутентифицированных пользователей проверяем CSRF токен
-    if (req.session.userId) {
-      const csrfToken = req.headers['x-csrf-token'] as string || req.body._csrf;
-      
-      if (!csrfToken || !verifyCSRFToken(req.sessionID, csrfToken)) {
-        // Логируем попытку CSRF атаки
-        await logSecurityEvent({
-          type: "csrf_attack",
-          ip: req.ip || req.socket.remoteAddress || "unknown",
-          userId: req.session.userId,
-          details: `CSRF attack attempt: ${req.method} ${req.path}`,
-          timestamp: new Date(),
-        }).catch(() => {});
-        
-        return res.status(403).json({ message: "Invalid CSRF token" });
-      }
-      
-      // Обновляем срок действия токена
-      refreshCSRFToken(req.sessionID);
+    if (!req.currentUser) {
+      return res.status(401).json({ message: "Unauthorized" });
     }
-    
+
+    const csrfToken = (req.headers["x-csrf-token"] as string) || (req.body && req.body._csrf);
+
+    if (!csrfToken || !verifyCSRFToken(req.sessionID, csrfToken)) {
+      // Логируем попытку CSRF атаки
+      await logSecurityEvent({
+        type: "csrf_attack",
+        ip: req.ip || req.socket.remoteAddress || "unknown",
+        userId: req.currentUser?.id,
+        details: `CSRF attack attempt: ${req.method} ${req.path}`,
+        timestamp: new Date(),
+      }).catch(() => {});
+
+      return res.status(403).json({ message: "Invalid CSRF token" });
+    }
+
+    // Обновляем срок действия токена
+    refreshCSRFToken(req.sessionID);
     next();
   };
 
   // Authentication middleware
   const requireAuth = (req: Request, res: Response, next: Function) => {
     if (!req.session.userId) {
-      console.log("Auth failed: no userId in session", { 
-        sessionId: req.sessionID, 
+      console.log("Auth failed: no userId in session", {
+        sessionId: req.sessionID,
         hasSession: !!req.session,
-        cookies: req.headers.cookie 
+        cookies: req.headers.cookie,
       });
       return res.status(401).json({ message: "Unauthorized" });
     }
-    next();
+
+    storage
+      .getUser(req.session.userId)
+      .then((user) => {
+        if (!user) {
+          return res.status(401).json({ message: "Unauthorized" });
+        }
+        req.currentUser = user;
+        next();
+      })
+      .catch((error) => {
+        console.error("Auth lookup error:", error);
+        res.status(500).json({ message: "Failed to verify session" });
+      });
   };
 
   // Проверка прав доступа к серверу (пользователь может управлять только своими серверами)
@@ -120,16 +237,18 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       return res.status(400).json({ message: "Invalid server ID" });
     }
 
+    if (!req.currentUser) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
     const server = await storage.getServer(serverId);
     if (!server) {
       return res.status(404).json({ message: "Server not found" });
     }
 
-    // В текущей реализации все пользователи могут управлять всеми серверами
-    // TODO: В будущем добавить проверку ownerId или ролей
-    // if (server.ownerId && server.ownerId !== req.session.userId && !isAdmin(req.session.userId)) {
-    //   return res.status(403).json({ message: "Access denied" });
-    // }
+    if (!userHasServerAccess(req.currentUser, serverId)) {
+      return res.status(403).json({ message: "Access denied" });
+    }
 
     next();
   };
@@ -202,9 +321,9 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         const csrfToken = generateCSRFToken(req.sessionID);
         
         // Send response with Set-Cookie header and CSRF token
-        res.json({ 
-          user: { id: user.id, username: user.username },
-          csrfToken 
+        res.json({
+          user: serializeUser(user),
+          csrfToken,
         });
       });
     } catch (error) {
@@ -222,15 +341,8 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     });
   });
 
-  app.get("/api/auth/me", async (req, res) => {
-    if (!req.session.userId) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-
-    const user = await storage.getUser(req.session.userId);
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
+  app.get("/api/auth/me", requireAuth, async (req, res) => {
+    const user = req.currentUser!;
 
     // Генерируем или обновляем CSRF токен
     let csrfToken = req.session.csrfToken as string | undefined;
@@ -241,10 +353,10 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       refreshCSRFToken(req.sessionID);
     }
 
-    res.json({ 
-      username: user.username,
+    res.json({
+      user: serializeUser(user),
       csrfToken,
-      version: "1.0"
+      version: "1.0",
     });
   });
 
@@ -255,6 +367,156 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       version: "1.0",
       description: "Game Server Management Platform",
     });
+  });
+
+  // ========== USER MANAGEMENT API ==========
+  
+  app.get("/api/users", requireAuth, requirePermission("users.manage"), async (_req, res) => {
+    const users = await storage.getAllUsers();
+    res.json(users.map(serializeUser));
+  });
+
+  app.post("/api/users", requireAuth, requirePermission("users.manage"), requireCSRF, async (req, res) => {
+    try {
+      const data = createUserSchema.parse(req.body);
+
+      const existing = await storage.getUserByUsername(data.username);
+      if (existing) {
+        return res.status(409).json({ message: "Username already exists" });
+      }
+
+      const permissions = resolvePermissionsForRole(data.role, data.permissions);
+      const allowedServerIds = await resolveAllowedServerIds(
+        data.allServersAccess ?? true,
+        data.allowedServerIds,
+      );
+
+      const passwordHash = await bcrypt.hash(data.password, 10);
+      const user = await storage.createUser({
+        username: data.username,
+        password: passwordHash,
+        role: data.role,
+        permissions,
+        allowedServerIds,
+      });
+
+      await storage.addActivity({
+        type: "user_create",
+        title: "User Created",
+        description: `User '${data.username}' was created`,
+        timestamp: new Date(),
+        userId: req.currentUser?.id,
+      });
+
+      res.status(201).json(serializeUser(user));
+    } catch (error: any) {
+      console.error("Create user error:", error);
+      res.status(400).json({ message: error.message || "Invalid request" });
+    }
+  });
+
+  app.put("/api/users/:id", requireAuth, requirePermission("users.manage"), requireCSRF, async (req, res) => {
+    if (!isValidUUID(req.params.id)) {
+      return res.status(400).json({ message: "Invalid user ID format" });
+    }
+
+    try {
+      const data = updateUserSchema.parse(req.body);
+      const user = await storage.getUser(req.params.id);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      if (data.username && data.username !== user.username) {
+        const existing = await storage.getUserByUsername(data.username);
+        if (existing) {
+          return res.status(409).json({ message: "Username already exists" });
+        }
+      }
+
+      const nextRole = data.role ?? user.role;
+      if (user.role === "admin" && nextRole !== "admin") {
+        if (await isLastAdmin(user.id)) {
+          return res.status(400).json({ message: "Cannot remove the last administrator" });
+        }
+      }
+
+      const permissions =
+        data.permissions || data.role
+          ? resolvePermissionsForRole(nextRole as UserRole, data.permissions ?? user.permissions)
+          : user.permissions;
+
+      let allowedServerIds = user.allowedServerIds;
+      if (data.allServersAccess !== undefined || data.allowedServerIds !== undefined) {
+        const allAccess =
+          data.allServersAccess !== undefined
+            ? data.allServersAccess
+            : user.allowedServerIds === null;
+        const selection =
+          data.allowedServerIds !== undefined
+            ? data.allowedServerIds
+            : Array.isArray(user.allowedServerIds)
+              ? user.allowedServerIds
+              : [];
+        allowedServerIds = await resolveAllowedServerIds(allAccess, selection);
+      }
+
+      const updates: Partial<User> = {
+        username: data.username ?? user.username,
+        role: nextRole,
+        permissions,
+        allowedServerIds,
+      };
+
+      if (data.password) {
+        updates.password = await bcrypt.hash(data.password, 10);
+      }
+
+      const updatedUser = await storage.updateUser(user.id, updates);
+      if (!updatedUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      await storage.addActivity({
+        type: "user_update",
+        title: "User Updated",
+        description: `User '${updatedUser.username}' was updated`,
+        timestamp: new Date(),
+        userId: req.currentUser?.id,
+      });
+
+      res.json(serializeUser(updatedUser));
+    } catch (error: any) {
+      console.error("Update user error:", error);
+      res.status(400).json({ message: error.message || "Invalid request" });
+    }
+  });
+
+  app.delete("/api/users/:id", requireAuth, requirePermission("users.manage"), requireCSRF, async (req, res) => {
+    if (!isValidUUID(req.params.id)) {
+      return res.status(400).json({ message: "Invalid user ID format" });
+    }
+
+    const user = await storage.getUser(req.params.id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (await isLastAdmin(user.id)) {
+      return res.status(400).json({ message: "Cannot delete the last administrator" });
+    }
+
+    await storage.deleteUser(user.id);
+
+    await storage.addActivity({
+      type: "user_delete",
+      title: "User Deleted",
+      description: `User '${user.username}' was deleted`,
+      timestamp: new Date(),
+      userId: req.currentUser?.id,
+    });
+
+    res.json({ message: "User deleted" });
   });
 
   // ========== PLUGINS API ==========
@@ -320,7 +582,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
   });
 
   // Получить список всех плагинов
-  app.get("/api/plugins", requireAuth, async (req, res) => {
+  app.get("/api/plugins", requireAuth, requirePermission("plugins.manage"), async (req, res) => {
     try {
       const plugins = await pluginManager.getAllPlugins();
       res.json(plugins);
@@ -331,7 +593,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
   });
 
   // Получить информацию о конкретном плагине
-  app.get("/api/plugins/:id", requireAuth, async (req, res) => {
+  app.get("/api/plugins/:id", requireAuth, requirePermission("plugins.manage"), async (req, res) => {
     try {
       const plugin = pluginManager.getPlugin(req.params.id);
       if (!plugin) {
@@ -345,14 +607,32 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
   });
 
   // Загрузить плагин (файл)
-  app.post("/api/plugins/upload", requireAuth, requireCSRF, uploadPlugins.single("plugin"), async (req, res) => {
+  app.post(
+    "/api/plugins/upload",
+    requireAuth,
+    requirePermission("plugins.manage"),
+    requireCSRF,
+    uploadPlugins.single("plugin"),
+    async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
       }
 
       const file = req.file;
-      const pluginId = req.body.pluginId || basename(file.originalname, extname(file.originalname));
+      // Валидация и санитизация pluginId
+      let pluginId: string;
+      if (req.body.pluginId) {
+        // Санитизируем pluginId - только безопасные символы
+        const rawPluginId = String(req.body.pluginId).trim();
+        if (!/^[a-zA-Z0-9._-]+$/.test(rawPluginId) || rawPluginId.length > 100) {
+          await unlinkPromise(file.path).catch(() => {});
+          return res.status(400).json({ message: "Invalid plugin ID format" });
+        }
+        pluginId = rawPluginId;
+      } else {
+        pluginId = basename(file.originalname, extname(file.originalname));
+      }
       const pluginPath = join(pluginsDir, pluginId);
 
       // Создаем директорию для плагина
@@ -372,13 +652,22 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       // Создаем или обновляем manifest.json
       const manifestPath = join(pluginPath, "manifest.json");
       const fileExt = extname(file.originalname).toLowerCase();
+      
+      // Валидация и санитизация данных манифеста
+      const sanitizeString = (str: any, maxLength: number = 200, defaultValue: string = ""): string => {
+        if (!str || typeof str !== "string") return defaultValue;
+        const sanitized = String(str).trim().substring(0, maxLength);
+        // Разрешаем только безопасные символы (убираем потенциально опасные)
+        return sanitized.replace(/[<>\"'&]/g, "");
+      };
+      
       let manifest: any = {
         id: pluginId,
-        name: req.body.name || pluginId,
-        version: req.body.version || "1.0.0",
-        description: req.body.description || "",
-        author: req.body.author || "Unknown",
-        type: req.body.type || (fileExt === ".py" ? "python" : fileExt === ".jar" ? "jar" : fileExt === ".ts" ? "typescript" : "javascript"),
+        name: sanitizeString(req.body.name, 100, pluginId),
+        version: sanitizeString(req.body.version, 20, "1.0.0"),
+        description: sanitizeString(req.body.description, 500, ""),
+        author: sanitizeString(req.body.author, 100, "Unknown"),
+        type: sanitizeString(req.body.type, 20) || (fileExt === ".py" ? "python" : fileExt === ".jar" ? "jar" : fileExt === ".ts" ? "typescript" : "javascript"),
         enabled: false,
         main: file.originalname,
       };
@@ -401,7 +690,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
   });
 
   // Включить плагин
-  app.post("/api/plugins/:id/enable", requireAuth, requireCSRF, async (req, res) => {
+  app.post("/api/plugins/:id/enable", requireAuth, requirePermission("plugins.manage"), requireCSRF, async (req, res) => {
     try {
       await pluginManager.enablePlugin(req.params.id);
       res.json({ message: "Plugin enabled" });
@@ -412,7 +701,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
   });
 
   // Отключить плагин
-  app.post("/api/plugins/:id/disable", requireAuth, requireCSRF, async (req, res) => {
+  app.post("/api/plugins/:id/disable", requireAuth, requirePermission("plugins.manage"), requireCSRF, async (req, res) => {
     try {
       await pluginManager.disablePlugin(req.params.id);
       res.json({ message: "Plugin disabled" });
@@ -423,7 +712,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
   });
 
   // Удалить плагин
-  app.delete("/api/plugins/:id", requireAuth, requireCSRF, async (req, res) => {
+  app.delete("/api/plugins/:id", requireAuth, requirePermission("plugins.manage"), requireCSRF, async (req, res) => {
     try {
       await pluginManager.deletePlugin(req.params.id);
       res.json({ message: "Plugin deleted" });
@@ -436,9 +725,9 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
   app.post("/api/auth/change-password", requireAuth, requireCSRF, async (req, res) => {
     try {
       const data = changePasswordSchema.parse(req.body);
-      const user = await storage.getUser(req.session.userId!);
+      const user = req.currentUser!;
 
-      if (!user || !(await bcrypt.compare(data.currentPassword, user.password))) {
+      if (!(await bcrypt.compare(data.currentPassword, user.password))) {
         return res.status(401).json({ message: "Current password is incorrect" });
       }
 
@@ -461,12 +750,12 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
   });
 
   // Server routes
-  app.get("/api/servers", requireAuth, async (req, res) => {
+  app.get("/api/servers", requireAuth, requirePermission("servers.view"), async (req, res) => {
     const servers = await storage.getAllServers();
-    res.json(servers);
+    res.json(filterServersForUser(servers, req.currentUser!));
   });
 
-  app.get("/api/servers/:id", requireAuth, async (req, res) => {
+  app.get("/api/servers/:id", requireAuth, requirePermission("servers.view"), checkServerAccess, async (req, res) => {
     // Валидация UUID
     if (!isValidUUID(req.params.id)) {
       return res.status(400).json({ message: "Invalid server ID format" });
@@ -479,7 +768,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     res.json(server);
   });
 
-  app.post("/api/servers", requireAuth, requireCSRF, async (req, res) => {
+  app.post("/api/servers", requireAuth, requirePermission("servers.manage"), requireCSRF, async (req, res) => {
     try {
       const data = insertServerSchema.parse(req.body);
       const server = await storage.createServer(data);
@@ -489,7 +778,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         title: "Server Created",
         description: `Server '${server.name}' (${server.gameType}) was created`,
         timestamp: new Date(),
-        userId: req.session.userId,
+        userId: req.currentUser?.id,
       });
       
       res.json(server);
@@ -499,7 +788,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   });
 
-  app.delete("/api/servers/:id", requireAuth, requireCSRF, checkServerAccess, async (req, res) => {
+  app.delete("/api/servers/:id", requireAuth, requirePermission("servers.manage"), requireCSRF, checkServerAccess, async (req, res) => {
     // Валидация UUID
     if (!isValidUUID(req.params.id)) {
       return res.status(400).json({ message: "Invalid server ID format" });
@@ -536,14 +825,20 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       title: "Server Deleted",
       description: `Server '${server.name}' was deleted`,
       timestamp: new Date(),
-      userId: req.session.userId,
+      userId: req.currentUser?.id,
     });
     
     res.json({ message: "Server deleted" });
   });
 
   // Server control operations
-  app.post("/api/servers/:id/start", requireAuth, requireCSRF, checkServerAccess, async (req, res) => {
+  app.post(
+    "/api/servers/:id/start",
+    requireAuth,
+    requirePermission("servers.control"),
+    requireCSRF,
+    checkServerAccess,
+    async (req, res) => {
     // Валидация UUID
     if (!isValidUUID(req.params.id)) {
       return res.status(400).json({ message: "Invalid server ID format" });
@@ -583,7 +878,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         title: "Server Started",
         description: `Server '${server.name}' was started`,
         timestamp: new Date(),
-        userId: req.session.userId,
+        userId: req.currentUser?.id,
       });
 
       res.json({ message: "Server started" });
@@ -594,7 +889,13 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   });
 
-  app.post("/api/servers/:id/stop", requireAuth, requireCSRF, checkServerAccess, async (req, res) => {
+  app.post(
+    "/api/servers/:id/stop",
+    requireAuth,
+    requirePermission("servers.control"),
+    requireCSRF,
+    checkServerAccess,
+    async (req, res) => {
     // Валидация UUID
     if (!isValidUUID(req.params.id)) {
       return res.status(400).json({ message: "Invalid server ID format" });
@@ -620,7 +921,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         title: "Server Stopped",
         description: `Server '${server.name}' was stopped`,
         timestamp: new Date(),
-        userId: req.session.userId,
+        userId: req.currentUser?.id,
       });
 
       res.json({ message: "Server stopped" });
@@ -630,7 +931,13 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   });
 
-  app.post("/api/servers/:id/restart", requireAuth, requireCSRF, checkServerAccess, async (req, res) => {
+  app.post(
+    "/api/servers/:id/restart",
+    requireAuth,
+    requirePermission("servers.control"),
+    requireCSRF,
+    checkServerAccess,
+    async (req, res) => {
     // Валидация UUID
     if (!isValidUUID(req.params.id)) {
       return res.status(400).json({ message: "Invalid server ID format" });
@@ -656,7 +963,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         title: "Server Restarted",
         description: `Server '${server.name}' was restarted`,
         timestamp: new Date(),
-        userId: req.session.userId,
+        userId: req.currentUser?.id,
       });
 
       res.json({ message: "Server restarted" });
@@ -666,7 +973,13 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   });
 
-  app.post("/api/servers/:id/command", requireAuth, requireCSRF, checkServerAccess, async (req, res) => {
+  app.post(
+    "/api/servers/:id/command",
+    requireAuth,
+    requirePermission("servers.control"),
+    requireCSRF,
+    checkServerAccess,
+    async (req, res) => {
     try {
       // Валидация UUID
       if (!isValidUUID(req.params.id)) {
@@ -694,7 +1007,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         await logSecurityEvent({
           type: "suspicious_command",
           ip: req.ip || req.socket.remoteAddress || "unknown",
-          userId: req.session.userId,
+          userId: req.currentUser?.id,
           details: `Attempted to execute dangerous command: ${req.body.command?.substring(0, 50)}`,
           timestamp: new Date(),
         });
@@ -707,7 +1020,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         await logSecurityEvent({
           type: "suspicious_command",
           ip: req.ip || req.socket.remoteAddress || "unknown",
-          userId: req.session.userId,
+          userId: req.currentUser?.id,
           details: `Attempted to execute suspicious command: ${command.substring(0, 100)}`,
           timestamp: new Date(),
         });
@@ -781,7 +1094,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         title: "Command Executed",
         description: `Command executed on server`,
         timestamp: new Date(),
-        userId: req.session.userId,
+        userId: req.currentUser?.id,
       }).catch(() => {}); // Игнорируем ошибки логирования
 
       // Санитизируем вывод для предотвращения XSS
@@ -798,7 +1111,12 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
   });
 
   // Server stats
-  app.get("/api/servers/:id/stats", requireAuth, async (req, res) => {
+  app.get(
+    "/api/servers/:id/stats",
+    requireAuth,
+    requirePermission("servers.view"),
+    checkServerAccess,
+    async (req, res) => {
     // Валидация UUID
     if (!isValidUUID(req.params.id)) {
       return res.status(400).json({ message: "Invalid server ID format" });
@@ -811,12 +1129,24 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     res.json(stats);
   });
 
-  app.get("/api/stats/servers", requireAuth, async (req, res) => {
-    res.json(storage.getAllServerStats());
+  app.get("/api/stats/servers", requireAuth, requirePermission("servers.view"), async (req, res) => {
+    const allStats = storage.getAllServerStats();
+    const user = req.currentUser!;
+    if (user.role === "admin" || user.allowedServerIds === null) {
+      return res.json(allStats);
+    }
+    const allowed = new Set(user.allowedServerIds || []);
+    const filteredEntries = Object.entries(allStats).filter(([serverId]) => allowed.has(serverId));
+    res.json(Object.fromEntries(filteredEntries));
   });
 
   // Server files
-  app.get("/api/servers/:id/files", requireAuth, checkServerAccess, async (req, res) => {
+  app.get(
+    "/api/servers/:id/files",
+    requireAuth,
+    requirePermission("servers.control"),
+    checkServerAccess,
+    async (req, res) => {
     try {
       // Валидация UUID
       if (!isValidUUID(req.params.id)) {
@@ -842,7 +1172,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         await logSecurityEvent({
           type: "path_traversal",
           ip: req.ip || req.socket.remoteAddress || "unknown",
-          userId: req.session.userId,
+        userId: req.currentUser?.id,
           details: `Attempted path traversal: ${req.query.path}`,
           timestamp: new Date(),
         });
@@ -855,7 +1185,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         await logSecurityEvent({
           type: "path_traversal",
           ip: req.ip || req.socket.remoteAddress || "unknown",
-          userId: req.session.userId,
+        userId: req.currentUser?.id,
           details: `Attempted to access suspicious path: ${filePath}`,
           timestamp: new Date(),
         });
@@ -865,9 +1195,10 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
 
       const container = await dockerManager.getContainer(node, server.containerId);
 
-      // Используем санитизированный путь (безопасно)
+      // Используем санитизированный путь (безопасно экранируем)
+      const escapedPath = filePath.replace(/"/g, '\\"');
       const exec = await container.exec({
-        Cmd: ["/bin/sh", "-c", `ls -la "${filePath}" 2>/dev/null | tail -n +2`],
+        Cmd: ["/bin/sh", "-c", `ls -la "${escapedPath}" 2>/dev/null | tail -n +2`],
         AttachStdout: true,
         AttachStderr: true,
       });
@@ -971,7 +1302,14 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
   });
 
   // Загрузить файл в сервер
-  app.post("/api/servers/:id/files/upload", requireAuth, requireCSRF, checkServerAccess, uploadServerFiles.single("file"), async (req, res) => {
+  app.post(
+    "/api/servers/:id/files/upload",
+    requireAuth,
+    requirePermission("servers.control"),
+    requireCSRF,
+    checkServerAccess,
+    uploadServerFiles.single("file"),
+    async (req, res) => {
     try {
       // Валидация UUID
       if (!isValidUUID(req.params.id)) {
@@ -992,17 +1330,40 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         return res.status(404).json({ message: "Node not found" });
       }
 
+      // Проверка опасных расширений файлов
+      if (isDangerousFileExtension(req.file.originalname)) {
+        await logSecurityEvent({
+          type: "suspicious_command",
+          ip: req.ip || req.socket.remoteAddress || "unknown",
+          userId: req.currentUser?.id,
+          details: `Attempted to upload dangerous file: ${req.file.originalname}`,
+          timestamp: new Date(),
+        });
+        // Удаляем временный файл
+        if (req.file.path) {
+          await unlinkPromise(req.file.path).catch(() => {});
+        }
+        return res.status(403).json({ message: "File type is not allowed for security reasons" });
+      }
+
       // Санитизация пути и имени файла
       let targetPath: string;
       try {
-        const basePath = (req.query.path as string) || "/data";
+        // Сначала санитизируем basePath из query
+        const rawBasePath = (req.query.path as string) || "/data";
+        const basePath = sanitizePath(rawBasePath);
         const fileName = basename(sanitizePath(req.file.originalname));
         targetPath = sanitizePath(`${basePath}/${fileName}`);
+        
+        // Дополнительная проверка на подозрительные пути
+        if (isSuspiciousPath(targetPath)) {
+          throw new Error("Path is not allowed for security reasons");
+        }
       } catch (error: any) {
         await logSecurityEvent({
           type: "path_traversal",
           ip: req.ip || req.socket.remoteAddress || "unknown",
-          userId: req.session.userId,
+          userId: req.currentUser?.id,
           details: `Attempted path traversal in file upload: ${req.query.path}`,
           timestamp: new Date(),
         });
@@ -1015,13 +1376,16 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
 
       const container = await dockerManager.getContainer(node, server.containerId);
 
-      // Копируем файл в контейнер используя exec с base64 (простой способ)
+      // Копируем файл в контейнер используя exec с base64 (безопасный способ)
       const fileContent = await readFilePromise(req.file.path);
       const base64Content = fileContent.toString("base64");
       
-      // Создаем файл через echo и base64 decode
+      // Используем безопасный способ без интерполяции в shell команде
+      // Экранируем путь и содержимое для безопасности
+      const escapedPath = targetPath.replace(/"/g, '\\"');
+      // Используем printf вместо echo для большей безопасности
       const exec = await container.exec({
-        Cmd: ["/bin/sh", "-c", `echo "${base64Content}" | base64 -d > "${targetPath}"`],
+        Cmd: ["/bin/sh", "-c", `printf '%s' "${base64Content}" | base64 -d > "${escapedPath}"`],
         AttachStdout: true,
         AttachStderr: true,
       });
@@ -1047,7 +1411,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         title: "File Uploaded",
         description: `File uploaded to server: ${basename(targetPath)}`,
         timestamp: new Date(),
-        userId: req.session.userId,
+        userId: req.currentUser?.id,
       }).catch(() => {});
 
       res.json({ message: "File uploaded successfully", path: targetPath });
@@ -1062,7 +1426,13 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
   });
 
   // Создать папку в сервере
-  app.post("/api/servers/:id/files/folder", requireAuth, requireCSRF, checkServerAccess, async (req, res) => {
+  app.post(
+    "/api/servers/:id/files/folder",
+    requireAuth,
+    requirePermission("servers.control"),
+    requireCSRF,
+    checkServerAccess,
+    async (req, res) => {
     try {
       // Валидация UUID
       if (!isValidUUID(req.params.id)) {
@@ -1082,14 +1452,21 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       // Санитизация пути и имени папки
       let targetPath: string;
       try {
-        const basePath = (req.body.path as string) || "/data";
+        // Сначала санитизируем basePath из body
+        const rawBasePath = (req.body.path as string) || "/data";
+        const basePath = sanitizePath(rawBasePath);
         const folderName = sanitizePath(req.body.name as string || "New Folder");
         targetPath = sanitizePath(`${basePath}/${folderName}`);
+        
+        // Дополнительная проверка на подозрительные пути
+        if (isSuspiciousPath(targetPath)) {
+          throw new Error("Path is not allowed for security reasons");
+        }
       } catch (error: any) {
         await logSecurityEvent({
           type: "path_traversal",
           ip: req.ip || req.socket.remoteAddress || "unknown",
-          userId: req.session.userId,
+          userId: req.currentUser?.id,
           details: `Attempted path traversal in folder creation: ${req.body.path}`,
           timestamp: new Date(),
         });
@@ -1098,9 +1475,10 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
 
       const container = await dockerManager.getContainer(node, server.containerId);
 
-      // Создаем папку через exec
+      // Создаем папку через exec (безопасно экранируем путь)
+      const escapedPath = targetPath.replace(/"/g, '\\"');
       const exec = await container.exec({
-        Cmd: ["/bin/sh", "-c", `mkdir -p "${targetPath}"`],
+        Cmd: ["/bin/sh", "-c", `mkdir -p "${escapedPath}"`],
         AttachStdout: true,
         AttachStderr: true,
       });
@@ -1123,7 +1501,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         title: "Folder Created",
         description: `Folder created on server: ${targetPath}`,
         timestamp: new Date(),
-        userId: req.session.userId,
+        userId: req.currentUser?.id,
       }).catch(() => {});
 
       res.json({ message: "Folder created successfully", path: targetPath });
@@ -1134,12 +1512,12 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
   });
 
   // Node routes
-  app.get("/api/nodes", requireAuth, async (req, res) => {
+  app.get("/api/nodes", requireAuth, requirePermission("nodes.manage"), async (req, res) => {
     const nodes = await storage.getAllNodes();
     res.json(nodes);
   });
 
-  app.get("/api/nodes/:id", requireAuth, async (req, res) => {
+  app.get("/api/nodes/:id", requireAuth, requirePermission("nodes.manage"), async (req, res) => {
     // Валидация UUID
     if (!isValidUUID(req.params.id)) {
       return res.status(400).json({ message: "Invalid node ID format" });
@@ -1152,7 +1530,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     res.json(node);
   });
 
-  app.post("/api/nodes", requireAuth, requireCSRF, async (req, res) => {
+  app.post("/api/nodes", requireAuth, requirePermission("nodes.manage"), requireCSRF, async (req, res) => {
     try {
       const data = insertNodeSchema.parse(req.body);
       const node = await storage.createNode(data);
@@ -1168,7 +1546,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         title: "Node Added",
         description: `Node '${node.name}' (${node.location}) was added`,
         timestamp: new Date(),
-        userId: req.session.userId,
+        userId: req.currentUser?.id,
       });
       
       res.json(node);
@@ -1178,7 +1556,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   });
 
-  app.delete("/api/nodes/:id", requireAuth, requireCSRF, async (req, res) => {
+  app.delete("/api/nodes/:id", requireAuth, requirePermission("nodes.manage"), requireCSRF, async (req, res) => {
     // Валидация UUID
     if (!isValidUUID(req.params.id)) {
       return res.status(400).json({ message: "Invalid node ID format" });
@@ -1195,7 +1573,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         title: "Node Deleted",
         description: `Node '${node.name}' was deleted`,
         timestamp: new Date(),
-        userId: req.session.userId,
+        userId: req.currentUser?.id,
       });
     }
     
@@ -1205,7 +1583,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
   });
 
   // Проверка подключения к ноде
-  app.post("/api/nodes/:id/check", requireAuth, async (req, res) => {
+  app.post("/api/nodes/:id/check", requireAuth, requirePermission("nodes.manage"), async (req, res) => {
     // Валидация UUID
     if (!isValidUUID(req.params.id)) {
       return res.status(400).json({ message: "Invalid node ID format" });
@@ -1232,15 +1610,33 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   });
 
-  app.get("/api/stats/nodes", requireAuth, async (req, res) => {
+  app.get("/api/stats/nodes", requireAuth, requirePermission("nodes.manage"), async (req, res) => {
     res.json(storage.getAllNodeStats());
   });
 
   // Activity routes
-  app.get("/api/activity", requireAuth, async (req, res) => {
+  app.get("/api/activity", requireAuth, requirePermission("activity.view"), async (req, res) => {
     const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
     const activities = await storage.getRecentActivities(limit);
-    res.json(activities);
+    
+    // Обогащаем активности информацией о пользователе
+    const enrichedActivities = await Promise.all(
+      activities.map(async (activity) => {
+        if (activity.userId) {
+          const user = await storage.getUser(activity.userId);
+          return {
+            ...activity,
+            performedBy: user?.username || "Unknown",
+          };
+        }
+        return {
+          ...activity,
+          performedBy: "System",
+        };
+      })
+    );
+    
+    res.json(enrichedActivities);
   });
 
   // Create HTTP server
@@ -1289,64 +1685,106 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
   wss.on("connection", (ws: WebSocket, req) => {
     console.log("WebSocket client connected");
 
-    // Track authenticated state
     (ws as any).subscribedServers = new Set<string>();
+
+    const sessionUserId = (req as any).session?.userId as string | undefined;
+    const userPromise = (async () => {
+      if (!sessionUserId) {
+        return null;
+      }
+      try {
+        return await storage.getUser(sessionUserId);
+      } catch (error) {
+        console.error("WebSocket user lookup error:", error);
+        return null;
+      }
+    })();
+
+    const ensureUser = async (): Promise<User | null> => {
+      if ((ws as any).currentUser) {
+        return (ws as any).currentUser as User;
+      }
+      const user = await userPromise;
+      if (user) {
+        (ws as any).currentUser = user;
+        return user;
+      }
+      return null;
+    };
+
+    const closeUnauthorized = () => {
+      try {
+        ws.close(1008, "Unauthorized");
+      } catch (error) {
+        // ignore
+      }
+    };
+
+    void (async () => {
+      const user = await ensureUser();
+      if (!user) {
+        closeUnauthorized();
+      }
+    })();
 
     ws.on("message", async (message: string) => {
       try {
+        const user = await ensureUser();
+        if (!user) {
+          closeUnauthorized();
+          return;
+        }
+
         const data = JSON.parse(message.toString());
 
         if (data.type === "subscribe" && data.serverId) {
-          // Валидация UUID
           if (!isValidUUID(data.serverId)) {
-            // Логируем попытку подписки с невалидным UUID
             await logSecurityEvent({
               type: "unauthorized_access",
               ip: (req as any).socket.remoteAddress || "unknown",
-              userId: (req as any).session?.userId,
+              userId: user.id,
               details: `Attempted to subscribe to invalid server ID: ${data.serverId}`,
               timestamp: new Date(),
             });
-            return; // Игнорируем невалидные подписки
+            return;
           }
 
-          // Получаем userId из сессии WebSocket
-          const userId = (req as any).session?.userId;
+          if (!hasPermission(user, "servers.view") || !userHasServerAccess(user, data.serverId)) {
+            await logSecurityEvent({
+              type: "unauthorized_access",
+              ip: (req as any).socket.remoteAddress || "unknown",
+              userId: user.id,
+              details: `WebSocket subscribe denied for server: ${data.serverId}`,
+              timestamp: new Date(),
+            });
+            return;
+          }
 
-          // Проверяем существование сервера
           const server = await storage.getServer(data.serverId);
           if (!server) {
             await logSecurityEvent({
               type: "unauthorized_access",
               ip: (req as any).socket.remoteAddress || "unknown",
-              userId,
+              userId: user.id,
               details: `Attempted to subscribe to non-existent server: ${data.serverId}`,
               timestamp: new Date(),
             });
             return;
           }
 
-          // Client subscribed to server logs
           (ws as any).subscribedServers.add(data.serverId);
-          
-          // Начинаем стриминг логов для этого сервера
-          await logStreamer.startStreaming(data.serverId, ws, userId);
+          await logStreamer.startStreaming(data.serverId, ws, user.id);
         }
 
         if (data.type === "unsubscribe" && data.serverId) {
-          // Валидация UUID
           if (!isValidUUID(data.serverId)) {
-            return; // Игнорируем невалидные отписки
+            return;
           }
-
           (ws as any).subscribedServers.delete(data.serverId);
-          
-          // Останавливаем стриминг для этого клиента
           logStreamer.stopStreaming(data.serverId, ws);
         }
 
         if (data.type === "command" && data.serverId && data.command) {
-          // Валидация UUID и команды
           if (!isValidUUID(data.serverId)) {
             ws.send(JSON.stringify({
               type: "command_error",
@@ -1356,20 +1794,32 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
             return;
           }
 
-          // Получаем userId из сессии WebSocket
-          const userId = (req as any).session?.userId;
+          if (!hasPermission(user, "servers.control") || !userHasServerAccess(user, data.serverId)) {
+            ws.send(JSON.stringify({
+              type: "command_error",
+              serverId: data.serverId,
+              error: "Insufficient permissions",
+            }));
+            await logSecurityEvent({
+              type: "unauthorized_access",
+              ip: (req as any).socket.remoteAddress || "unknown",
+              userId: user.id,
+              details: `WebSocket command denied for server: ${data.serverId}`,
+              timestamp: new Date(),
+            });
+            return;
+          }
 
-          // Проверяем существование сервера и права доступа
           const server = await storage.getServer(data.serverId);
           if (!server) {
             await logSecurityEvent({
               type: "unauthorized_access",
               ip: (req as any).socket.remoteAddress || "unknown",
-              userId,
+              userId: user.id,
               details: `Attempted to execute command on non-existent server: ${data.serverId}`,
               timestamp: new Date(),
             });
-            
+
             ws.send(JSON.stringify({
               type: "command_error",
               serverId: data.serverId,
@@ -1378,7 +1828,6 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
             return;
           }
 
-          // Санитизация команды
           let command: string;
           try {
             command = sanitizeCommand(data.command);
@@ -1386,11 +1835,11 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
             await logSecurityEvent({
               type: "suspicious_command",
               ip: (req as any).socket.remoteAddress || "unknown",
-              userId,
+              userId: user.id,
               details: `WebSocket: Attempted dangerous command: ${data.command?.substring(0, 50)}`,
               timestamp: new Date(),
             });
-            
+
             ws.send(JSON.stringify({
               type: "command_error",
               serverId: data.serverId,
@@ -1399,16 +1848,15 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
             return;
           }
 
-          // Проверяем подозрительность команды
           if (isSuspiciousCommand(command)) {
             await logSecurityEvent({
               type: "suspicious_command",
               ip: (req as any).socket.remoteAddress || "unknown",
-              userId,
+              userId: user.id,
               details: `WebSocket: Attempted suspicious command: ${command.substring(0, 100)}`,
               timestamp: new Date(),
             });
-            
+
             ws.send(JSON.stringify({
               type: "command_error",
               serverId: data.serverId,
@@ -1417,17 +1865,13 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
             return;
           }
 
-          // Отправляем команду в контейнер через logStreamer
           try {
-            await logStreamer.sendCommand(data.serverId, command, userId);
-            
-            // Отправляем подтверждение клиенту (безопасно)
+            await logStreamer.sendCommand(data.serverId, command, user.id);
             ws.send(JSON.stringify({
               type: "command_sent",
               serverId: data.serverId,
             }));
           } catch (error: any) {
-            // Отправляем ошибку клиенту (безопасно)
             ws.send(JSON.stringify({
               type: "command_error",
               serverId: data.serverId,

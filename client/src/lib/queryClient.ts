@@ -1,5 +1,29 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
+let csrfTokenCache: string | null = null;
+
+async function getCSRFToken(): Promise<string | null> {
+  if (csrfTokenCache) {
+    return csrfTokenCache;
+  }
+
+  try {
+    const response = await fetch("/api/auth/me", { credentials: "include" });
+    if (response.ok) {
+      const data = await response.json();
+      csrfTokenCache = data.csrfToken || null;
+      return csrfTokenCache;
+    }
+  } catch (error) {
+    console.error("Failed to get CSRF token:", error);
+  }
+  return null;
+}
+
+export function clearCSRFTokenCache() {
+  csrfTokenCache = null;
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
@@ -12,9 +36,23 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
+  const needsCSRF = method !== "GET" && method !== "HEAD" && method !== "OPTIONS";
+  const headers: Record<string, string> = {};
+  
+  if (data) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  if (needsCSRF) {
+    const token = await getCSRFToken();
+    if (token) {
+      headers["X-CSRF-Token"] = token;
+    }
+  }
+
   const res = await fetch(url, {
     method,
-    headers: data ? { "Content-Type": "application/json" } : {},
+    headers,
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include",
   });

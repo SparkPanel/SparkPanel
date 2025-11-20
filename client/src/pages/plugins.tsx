@@ -36,14 +36,25 @@ export default function PluginsPage() {
   const queryClient = useQueryClient();
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [pluginForm, setPluginForm] = useState({
+  type PluginFormState = {
+    pluginId: string;
+    name: string;
+    version: string;
+    description: string;
+    author: string;
+    type: Plugin["type"];
+  };
+
+  const createDefaultPluginForm = (): PluginFormState => ({
     pluginId: "",
     name: "",
     version: "1.0.0",
     description: "",
     author: "",
-    type: "javascript" as const,
+    type: "javascript",
   });
+
+  const [pluginForm, setPluginForm] = useState<PluginFormState>(createDefaultPluginForm());
 
   // Загрузка списка плагинов
   const { data: plugins = [], isLoading } = useQuery<Plugin[]>({
@@ -128,14 +139,7 @@ export default function PluginsPage() {
       queryClient.invalidateQueries({ queryKey: ["plugins"] });
       setUploadDialogOpen(false);
       setSelectedFile(null);
-      setPluginForm({
-        pluginId: "",
-        name: "",
-        version: "1.0.0",
-        description: "",
-        author: "",
-        type: "javascript",
-      });
+      setPluginForm(createDefaultPluginForm());
       toast({
         title: "Plugin uploaded",
         description: "Plugin has been uploaded successfully",
@@ -156,7 +160,7 @@ export default function PluginsPage() {
       setSelectedFile(file);
       // Автоматически определяем тип плагина по расширению
       const ext = file.name.split(".").pop()?.toLowerCase();
-      let type: "javascript" | "typescript" | "python" | "jar" = "javascript";
+      let type: Plugin["type"] = "javascript";
       if (ext === "py") type = "python";
       else if (ext === "jar") type = "jar";
       else if (ext === "ts") type = "typescript";
@@ -300,9 +304,9 @@ export default function PluginsPage() {
                   <select
                     id="plugin-type"
                     value={pluginForm.type}
-                    onChange={(e) =>
-                      setPluginForm({ ...pluginForm, type: e.target.value as any })
-                    }
+                  onChange={(e) =>
+                    setPluginForm({ ...pluginForm, type: e.target.value as Plugin["type"] })
+                  }
                     className="mt-2 w-full px-3 py-2 border rounded-md"
                   >
                     <option value="javascript">JavaScript</option>

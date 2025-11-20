@@ -1,23 +1,33 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Activity, Server, HardDrive, Play, Square, Plus, Trash2, RotateCw, LogIn, KeyRound } from "lucide-react";
+import { Activity, HardDrive, Play, Square, Plus, Trash2, RotateCw, LogIn, KeyRound, Terminal, ShieldAlert, UserPlus, UserMinus, UserCog, User } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import type { Activity as ActivityType } from "@shared/schema";
+import type { Activity as ActivityEntry, ActivityType } from "@shared/schema";
+import type { LucideIcon } from "lucide-react";
 
-const iconMap = {
+interface EnrichedActivity extends ActivityEntry {
+  performedBy?: string;
+}
+
+const iconMap: Record<ActivityType, LucideIcon> = {
   server_start: Play,
   server_stop: Square,
   server_restart: RotateCw,
   server_create: Plus,
   server_delete: Trash2,
+  server_command: Terminal,
   node_add: HardDrive,
   node_delete: Trash2,
   user_login: LogIn,
   password_change: KeyRound,
+  user_create: UserPlus,
+  user_update: UserCog,
+  user_delete: UserMinus,
+  security_event: ShieldAlert,
 };
 
 export default function ActivityPage() {
-  const { data: activities = [], isLoading } = useQuery<ActivityType[]>({
+  const { data: activities = [], isLoading } = useQuery<EnrichedActivity[]>({
     queryKey: ["/api/activity"],
     refetchInterval: 5000,
   });
@@ -73,9 +83,17 @@ export default function ActivityPage() {
                           {formatTimeAgo(new Date(activity.timestamp))}
                         </span>
                       </div>
-                      <p className="text-sm text-muted-foreground">
+                      <p className="text-sm text-muted-foreground mb-2">
                         {activity.description}
                       </p>
+                      {activity.performedBy && (
+                        <div className="flex items-center gap-2">
+                          <User className="w-3 h-3 text-muted-foreground" />
+                          <span className="text-xs text-muted-foreground">
+                            Performed by: <span className="font-medium">{activity.performedBy}</span>
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );

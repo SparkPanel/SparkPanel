@@ -8,9 +8,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import { Server, Lock, User } from "lucide-react";
+import { clearCSRFTokenCache } from "@/lib/queryClient";
+
+interface User {
+  id: string;
+  username: string;
+  role: "admin" | "operator" | "viewer";
+  allowedServerIds?: string[] | null;
+}
 
 interface LoginPageProps {
-  onLogin: (username: string) => void;
+  onLogin: (user: User) => void;
 }
 
 export default function LoginPage({ onLogin }: LoginPageProps) {
@@ -43,13 +51,14 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
 
   const handleLogin = async (data: Login) => {
     setIsLoading(true);
+    clearCSRFTokenCache(); // Очищаем кэш перед логином
     try {
       const result = await loginMutation(data);
       toast({
         title: "Login successful",
         description: "Welcome to SparkPanel",
       });
-      onLogin(result.user.username);
+      onLogin(result.user);
     } catch (error: any) {
       toast({
         title: "Login failed",

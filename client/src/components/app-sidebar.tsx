@@ -1,4 +1,4 @@
-import { Home, Server, HardDrive, Settings, LogOut, Activity, Package } from "lucide-react";
+import { Home, Server, HardDrive, Settings, LogOut, Activity, Package, Users } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import {
   Sidebar,
@@ -14,6 +14,13 @@ import {
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+
+interface User {
+  id: string;
+  username: string;
+  role: "admin" | "operator" | "viewer";
+  allowedServers?: string[] | null;
+}
 
 const menuItems = [
   {
@@ -49,11 +56,11 @@ const menuItems = [
 ];
 
 interface AppSidebarProps {
-  username: string;
+  user: User;
   onLogout: () => void;
 }
 
-export function AppSidebar({ username, onLogout }: AppSidebarProps) {
+export function AppSidebar({ user, onLogout }: AppSidebarProps) {
   const [location] = useLocation();
 
   return (
@@ -92,6 +99,24 @@ export function AppSidebar({ username, onLogout }: AppSidebarProps) {
           </SidebarGroupContent>
         </SidebarGroup>
 
+        {user.role === "admin" && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Administration</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={location === "/users"}>
+                    <Link href="/users" data-testid="link-users">
+                      <Users className="w-4 h-4" />
+                      <span>Users</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
         <SidebarGroup>
           <SidebarGroupLabel>System</SidebarGroupLabel>
           <SidebarGroupContent>
@@ -114,9 +139,11 @@ export function AppSidebar({ username, onLogout }: AppSidebarProps) {
         <div className="flex items-center justify-between gap-2">
           <div className="flex flex-col min-w-0">
             <span className="text-sm font-medium text-sidebar-foreground truncate">
-              {username}
+              {user.username}
             </span>
-            <span className="text-xs text-muted-foreground">Administrator</span>
+            <span className="text-xs text-muted-foreground">
+              {user.role === "admin" ? "Administrator" : user.role === "operator" ? "Operator" : "Viewer"}
+            </span>
           </div>
           <Button
             variant="ghost"

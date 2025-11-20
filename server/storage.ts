@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type Server, type InsertServer, type Node, type InsertNode, type ServerStats, type NodeStats, type Activity } from "@shared/schema";
+import { type User, type InsertUser, type Server, type InsertServer, type Node, type InsertNode, type ServerStats, type NodeStats, type Activity, type UserPermission, type UserRole, userPermissions } from "@shared/schema";
 import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 
@@ -6,8 +6,11 @@ export interface IStorage {
   // Users
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getAllUsers(): Promise<User[]>;
   createUser(user: InsertUser): Promise<User>;
+  updateUser(id: string, updates: Partial<User>): Promise<User | undefined>;
   updateUserPassword(id: string, newPasswordHash: string): Promise<void>;
+  deleteUser(id: string): Promise<boolean>;
 
   // Servers
   getAllServers(): Promise<Server[]>;
@@ -70,6 +73,9 @@ export class MemStorage implements IStorage {
           id: randomUUID(),
           username: defaultUsername,
           password: passwordHash,
+          role: "admin",
+          permissions: [...userPermissions],
+          allowedServerIds: null,
           createdAt: new Date(),
         };
         this.users.set(user.id, user);
@@ -91,15 +97,75 @@ export class MemStorage implements IStorage {
     );
   }
 
+  async getAllUsers(): Promise<User[]> {
+    return Array.from(this.users.values());
+  }
+
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = randomUUID();
+    
+    // Обрабатываем permissions - может быть Json из базы данных
+    let permissions: UserPermission[] = [];
+    if (Array.isArray(insertUser.permissions)) {
+      permissions = insertUser.permissions.filter((p): p is UserPermission => 
+        typeof p === "string" && userPermissions.includes(p as UserPermission)
+      );
+    }
+    
+    // Обрабатываем allowedServerIds - может быть Json из базы данных
+    let allowedServerIds: string[] | null = null;
+    if (insertUser.allowedServerIds !== undefined && insertUser.allowedServerIds !== null) {
+      if (Array.isArray(insertUser.allowedServerIds)) {
+        allowedServerIds = insertUser.allowedServerIds.filter((id): id is string => typeof id === "string");
+      }
+    }
+    
     const user: User = {
       ...insertUser,
       id,
+      role: (insertUser.role as UserRole) ?? "viewer",
+      permissions,
+      allowedServerIds,
       createdAt: new Date(),
     };
     this.users.set(id, user);
     return user;
+  }
+
+  async updateUser(id: string, updates: Partial<User>): Promise<User | undefined> {
+    const user = this.users.get(id);
+    if (!user) {
+      return undefined;
+    }
+    
+    // Обрабатываем permissions
+    let permissions: UserPermission[] = user.permissions;
+    if (updates.permissions !== undefined) {
+      if (Array.isArray(updates.permissions)) {
+        permissions = updates.permissions.filter((p): p is UserPermission => 
+          typeof p === "string" && userPermissions.includes(p as UserPermission)
+        );
+      }
+    }
+    
+    // Обрабатываем allowedServerIds
+    let allowedServerIds: string[] | null = user.allowedServerIds;
+    if (updates.allowedServerIds !== undefined) {
+      if (updates.allowedServerIds === null) {
+        allowedServerIds = null;
+      } else if (Array.isArray(updates.allowedServerIds)) {
+        allowedServerIds = updates.allowedServerIds.filter((id): id is string => typeof id === "string");
+      }
+    }
+    
+    const updated: User = {
+      ...user,
+      ...updates,
+      permissions,
+      allowedServerIds,
+    };
+    this.users.set(id, updated);
+    return updated;
   }
 
   async updateUserPassword(id: string, newPasswordHash: string): Promise<void> {
@@ -108,6 +174,10 @@ export class MemStorage implements IStorage {
       user.password = newPasswordHash;
       this.users.set(id, user);
     }
+  }
+
+  async deleteUser(id: string): Promise<boolean> {
+    return this.users.delete(id);
   }
 
   // Servers
@@ -124,7 +194,10 @@ export class MemStorage implements IStorage {
     const server: Server = {
       ...insertServer,
       id,
+      status: insertServer.status ?? "stopped",
       containerId: null,
+      autoStart: insertServer.autoStart ?? false,
+      config: insertServer.config ?? {},
       createdAt: new Date(),
     };
     this.servers.set(id, server);
@@ -142,7 +215,18 @@ export class MemStorage implements IStorage {
   }
 
   async deleteServer(id: string): Promise<boolean> {
-    return this.servers.delete(id);
+    const deleted = this.servers.delete(id);
+    if (deleted) {
+      for (const [userId, user] of this.users.entries()) {
+        if (user.allowedServerIds && Array.isArray(user.allowedServerIds)) {
+          const filtered = user.allowedServerIds.filter((serverId) => serverId !== id);
+          if (filtered.length !== user.allowedServerIds.length) {
+            this.users.set(userId, { ...user, allowedServerIds: filtered });
+          }
+        }
+      }
+    }
+    return deleted;
   }
 
   // Nodes
@@ -159,6 +243,8 @@ export class MemStorage implements IStorage {
     const node: Node = {
       ...insertNode,
       id,
+      status: insertNode.status ?? "online",
+      port: insertNode.port ?? 2375,
       createdAt: new Date(),
     };
     this.nodes.set(id, node);

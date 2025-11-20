@@ -127,16 +127,19 @@ export class StatsCollector {
       let diskUsageGB = 0;
       try {
         const docker = dockerManager.getDockerClient(node);
-        
         // Получаем информацию о всех контейнерах на ноде
         for (const containerInfo of containers) {
           try {
             const container = docker.getContainer(containerInfo.Id);
-            const inspect = await container.inspect();
-            
-            // Получаем размер контейнера (размер слоев + размер контейнера)
-            if (inspect.SizeRootFs && inspect.SizeRw) {
-              const containerSize = (inspect.SizeRootFs + inspect.SizeRw) / (1024 * 1024 * 1024); // Convert to GB
+            const inspect = await container.inspect() as {
+              SizeRootFs?: number;
+              SizeRw?: number;
+            };
+
+            const sizeRootFs = inspect.SizeRootFs ?? 0;
+            const sizeRw = inspect.SizeRw ?? 0;
+            if (sizeRootFs || sizeRw) {
+              const containerSize = (sizeRootFs + sizeRw) / (1024 * 1024 * 1024); // Convert to GB
               diskUsageGB += containerSize;
             }
           } catch (error) {

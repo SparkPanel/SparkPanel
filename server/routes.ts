@@ -24,6 +24,7 @@ import {
   type UserPermission,
   type UserRole,
   type UserProfile,
+  type Node,
 } from "@shared/schema";
 import session from "express-session";
 import memorystore from "memorystore";
@@ -66,8 +67,8 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
   // Session middleware
   sessionMiddleware = session({
     secret: sessionSecret,
-    resave: false,
-    saveUninitialized: false,
+    resave: true, // Сохраняем сессию при каждом запросе для надежности (нужно для MemoryStore)
+    saveUninitialized: false, // Не сохраняем пустые сессии
     name: "sparkpanel.sid", // Изменяем имя cookie, чтобы скрыть использование express-session
     store: new MemoryStore({
       checkPeriod: 86400000, // prune expired entries every 24h
@@ -183,33 +184,35 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
 
     const csrfToken = (req.headers["x-csrf-token"] as string) || (req.body && req.body._csrf);
-
-    if (!csrfToken || !verifyCSRFToken(req.sessionID, csrfToken)) {
-      // Логируем попытку CSRF атаки
-      await logSecurityEvent({
-        type: "csrf_attack",
-        ip: req.ip || req.socket.remoteAddress || "unknown",
+      
+      if (!csrfToken || !verifyCSRFToken(req.sessionID, csrfToken)) {
+        // Логируем попытку CSRF атаки
+        await logSecurityEvent({
+          type: "csrf_attack",
+          ip: req.ip || req.socket.remoteAddress || "unknown",
         userId: req.currentUser?.id,
-        details: `CSRF attack attempt: ${req.method} ${req.path}`,
-        timestamp: new Date(),
-      }).catch(() => {});
-
-      return res.status(403).json({ message: "Invalid CSRF token" });
-    }
-
-    // Обновляем срок действия токена
-    refreshCSRFToken(req.sessionID);
+          details: `CSRF attack attempt: ${req.method} ${req.path}`,
+          timestamp: new Date(),
+        }).catch(() => {});
+        
+        return res.status(403).json({ message: "Invalid CSRF token" });
+      }
+      
+      // Обновляем срок действия токена
+      refreshCSRFToken(req.sessionID);
     next();
   };
 
   // Authentication middleware
   const requireAuth = (req: Request, res: Response, next: Function) => {
-    if (!req.session.userId) {
-      console.log("Auth failed: no userId in session", {
-        sessionId: req.sessionID,
-        hasSession: !!req.session,
-        cookies: req.headers.cookie,
-      });
+    // Проверяем, что сессия существует и содержит userId
+    if (!req.session || !req.session.userId) {
+      // Не логируем это как ошибку - это нормально, если пользователь не залогинился
+      // Логируем только в development режиме для отладки
+      if (process.env.NODE_ENV === "development" && req.session && !req.session.userId) {
+        // Это нормальная ситуация - пользователь просто не залогинился
+        // Не нужно логировать это как ошибку
+      }
       return res.status(401).json({ message: "Unauthorized" });
     }
 
@@ -217,9 +220,15 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       .getUser(req.session.userId)
       .then((user) => {
         if (!user) {
+          // Пользователь не найден - очищаем сессию
+          req.session.destroy(() => {});
           return res.status(401).json({ message: "Unauthorized" });
         }
         req.currentUser = user;
+        // Убеждаемся, что userId сохранен в сессии
+        if (req.session.userId !== user.id) {
+          req.session.userId = user.id;
+        }
         next();
       })
       .catch((error) => {
@@ -301,30 +310,59 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       // Сбрасываем rate limit при успешном входе
       loginRateLimiter.reset(identifier);
 
-      req.session.userId = user.id;
-      req.session.save((err) => {
-        if (err) {
-          console.error("Session save error:", err);
-          return res.status(500).json({ message: "Failed to save session" });
-        }
-        
-        // Log activity after session is saved (без чувствительных данных)
-        storage.addActivity({
-          type: "user_login",
-          title: "User Login",
-          description: `User logged in`,
-          timestamp: new Date(),
-          userId: user.id,
-        }).catch(err => console.error("Activity log error:", err));
-        
-        // Генерируем CSRF токен для новой сессии
-        const csrfToken = generateCSRFToken(req.sessionID);
-        
-        // Send response with Set-Cookie header and CSRF token
-        res.json({
-          user: serializeUser(user),
-          csrfToken,
+      // Регенерируем сессию для безопасности (уничтожаем старую и создаем новую)
+      return new Promise<void>((resolve, reject) => {
+        req.session.regenerate((err) => {
+          if (err) {
+            console.error("Session regeneration error:", err);
+            return reject(err);
+          }
+
+          // Теперь устанавливаем userId в новую сессию
+          req.session.userId = user.id;
+          
+          // Генерируем CSRF токен для новой сессии
+          const csrfToken = generateCSRFToken(req.sessionID);
+          req.session.csrfToken = csrfToken;
+          
+          // Сохраняем сессию
+          req.session.save((saveErr) => {
+            if (saveErr) {
+              console.error("Session save error:", saveErr);
+              return reject(saveErr);
+            }
+            
+            // Проверяем, что userId действительно сохранен
+            if (!req.session.userId) {
+              console.error("CRITICAL: userId was not saved in session after save()");
+              req.session.userId = user.id;
+              req.session.save((err2) => {
+                if (err2) {
+                  console.error("Failed to save userId on retry:", err2);
+                }
+              });
+            }
+            
+            // Log activity after session is saved (без чувствительных данных)
+            storage.addActivity({
+              type: "user_login",
+              title: "User Login",
+              description: `User logged in`,
+              timestamp: new Date(),
+              userId: user.id,
+            }).catch(err => console.error("Activity log error:", err));
+            
+            // Send response with Set-Cookie header and CSRF token
+            res.json({ 
+              user: serializeUser(user),
+              csrfToken,
+            });
+            resolve();
+          });
         });
+      }).catch((error) => {
+        console.error("Login session error:", error);
+        res.status(500).json({ message: "Failed to create session" });
       });
     } catch (error) {
       console.error("Login error:", error);
@@ -344,6 +382,11 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
   app.get("/api/auth/me", requireAuth, async (req, res) => {
     const user = req.currentUser!;
 
+    // Убеждаемся, что userId сохранен в сессии (на случай если сессия была пересоздана)
+    if (!req.session.userId) {
+      req.session.userId = user.id;
+    }
+
     // Генерируем или обновляем CSRF токен
     let csrfToken = req.session.csrfToken as string | undefined;
     if (!csrfToken || !verifyCSRFToken(req.sessionID, csrfToken)) {
@@ -353,20 +396,95 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       refreshCSRFToken(req.sessionID);
     }
 
-    res.json({
-      user: serializeUser(user),
-      csrfToken,
-      version: "1.0",
+    // Явно сохраняем сессию
+    req.session.save((err) => {
+      if (err) {
+        console.error("Session save error in /api/auth/me:", err);
+      }
+      
+      res.json({ 
+        user: serializeUser(user),
+        csrfToken,
+        version: "1.1",
+      });
     });
   });
 
   // API endpoint для получения информации о системе/версии
   app.get("/api/system/info", requireAuth, async (req, res) => {
+    const settings = await storage.getPanelSettings();
     res.json({
-      name: "SparkPanel",
+      name: settings.panelName,
       version: "1.0",
       description: "Game Server Management Platform",
     });
+  });
+
+  // API endpoints для настроек панели
+  // GET endpoint публичный - название панели нужно на странице логина
+  app.get("/api/settings/panel", async (req, res) => {
+    const settings = await storage.getPanelSettings();
+    res.json(settings);
+  });
+
+  app.put("/api/settings/panel", requireAuth, requirePermission("servers.manage"), requireCSRF, async (req, res) => {
+    try {
+      const { panelName, primaryColor, backgroundColor, borderColor, sidebarAccentColor } = req.body;
+      
+      const updates: { panelName?: string; primaryColor?: string; backgroundColor?: string; borderColor?: string; sidebarAccentColor?: string } = {};
+      
+      if (panelName !== undefined) {
+        if (typeof panelName !== "string" || panelName.trim().length === 0) {
+          return res.status(400).json({ message: "Panel name cannot be empty" });
+        }
+        if (panelName.length > 50) {
+          return res.status(400).json({ message: "Panel name must be 50 characters or less" });
+        }
+        updates.panelName = escapeHtml(panelName.trim());
+      }
+      
+      if (primaryColor !== undefined) {
+        if (primaryColor !== null && (typeof primaryColor !== "string" || !/^#[0-9A-Fa-f]{6}$/.test(primaryColor))) {
+          return res.status(400).json({ message: "Primary color must be a valid hex color (e.g., #FF5733) or null" });
+        }
+        updates.primaryColor = primaryColor || undefined;
+      }
+      
+      if (backgroundColor !== undefined) {
+        if (backgroundColor !== null && (typeof backgroundColor !== "string" || !/^#[0-9A-Fa-f]{6}$/.test(backgroundColor))) {
+          return res.status(400).json({ message: "Background color must be a valid hex color (e.g., #FFFFFF) or null" });
+        }
+        updates.backgroundColor = backgroundColor || undefined;
+      }
+      
+      if (borderColor !== undefined) {
+        if (borderColor !== null && (typeof borderColor !== "string" || !/^#[0-9A-Fa-f]{6}$/.test(borderColor))) {
+          return res.status(400).json({ message: "Border color must be a valid hex color (e.g., #E5E7EB) or null" });
+        }
+        updates.borderColor = borderColor || undefined;
+      }
+      
+      if (sidebarAccentColor !== undefined) {
+        if (sidebarAccentColor !== null && (typeof sidebarAccentColor !== "string" || !/^#[0-9A-Fa-f]{6}$/.test(sidebarAccentColor))) {
+          return res.status(400).json({ message: "Sidebar accent color must be a valid hex color (e.g., #F3F4F6) or null" });
+        }
+        updates.sidebarAccentColor = sidebarAccentColor || undefined;
+      }
+      
+      const settings = await storage.updatePanelSettings(updates);
+      
+      await storage.addActivity({
+        type: "server_command",
+        title: "Panel Settings Updated",
+        description: `Panel settings updated`,
+        timestamp: new Date(),
+        userId: req.currentUser?.id,
+      }).catch(() => {});
+      
+      res.json(settings);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to update panel settings" });
+    }
   });
 
   // ========== USER MANAGEMENT API ==========
@@ -1511,6 +1629,511 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   });
 
+  // Backups routes
+  app.get(
+    "/api/servers/:id/backups",
+    requireAuth,
+    requirePermission("servers.view"),
+    checkServerAccess,
+    async (req, res) => {
+      try {
+        if (!isValidUUID(req.params.id)) {
+          return res.status(400).json({ message: "Invalid server ID format" });
+        }
+        const backups = await storage.getBackupsByServer(req.params.id);
+        res.json(backups);
+      } catch (error: any) {
+        res.status(500).json({ message: error.message || "Failed to get backups" });
+      }
+    }
+  );
+
+  app.post(
+    "/api/servers/:id/backups",
+    requireAuth,
+    requirePermission("servers.control"),
+    requireCSRF,
+    checkServerAccess,
+    async (req, res) => {
+      try {
+        if (!isValidUUID(req.params.id)) {
+          return res.status(400).json({ message: "Invalid server ID format" });
+        }
+
+        const server = await storage.getServer(req.params.id);
+        if (!server || !server.containerId) {
+          return res.status(404).json({ message: "Server not found or container not created" });
+        }
+
+        // Проверка лимита бекапов
+        const backups = await storage.getBackupsByServer(req.params.id);
+        const maxBackups = server.limits?.maxBackups;
+        if (maxBackups !== undefined && backups.length >= maxBackups) {
+          return res.status(403).json({ message: `Maximum backup limit reached (${maxBackups})` });
+        }
+
+        const { name, description } = req.body;
+        if (!name || typeof name !== "string") {
+          return res.status(400).json({ message: "Backup name is required" });
+        }
+
+        const node = await storage.getNode(server.nodeId);
+        if (!node) {
+          return res.status(404).json({ message: "Node not found" });
+        }
+
+        // Создаем бекап через Docker (архивируем /data директорию)
+        const container = await dockerManager.getContainer(node, server.containerId);
+        const backupFileName = `backup-${Date.now()}.tar.gz`;
+        const backupPath = `/tmp/${backupFileName}`;
+
+        // Создаем архив
+        const exec = await container.exec({
+          Cmd: ["/bin/sh", "-c", `tar -czf ${backupPath} -C /data .`],
+          AttachStdout: true,
+          AttachStderr: true,
+        });
+
+        const stream = await exec.start({ hijack: true, stdin: false });
+        let output = "";
+        stream.on("data", (chunk: Buffer) => {
+          output += chunk.toString();
+        });
+
+        await new Promise<void>((resolve, reject) => {
+          stream.on("end", resolve);
+          stream.on("error", reject);
+          setTimeout(() => reject(new Error("Backup timeout")), 300000); // 5 минут
+        });
+
+        // Получаем размер файла
+        const sizeExec = await container.exec({
+          Cmd: ["/bin/sh", "-c", `stat -c%s ${backupPath} 2>/dev/null || echo 0`],
+          AttachStdout: true,
+          AttachStderr: true,
+        });
+
+        const sizeStream = await sizeExec.start({ hijack: true, stdin: false });
+        let sizeOutput = "";
+        sizeStream.on("data", (chunk: Buffer) => {
+          sizeOutput += chunk.toString();
+        });
+
+        await new Promise<void>((resolve) => {
+          sizeStream.on("end", resolve);
+          sizeStream.on("error", () => resolve());
+          setTimeout(() => resolve(), 5000);
+        });
+
+        const size = parseInt(sizeOutput.trim()) || 0;
+
+        const backup = await storage.createBackup({
+          serverId: req.params.id,
+          name: sanitizePath(name),
+          description: description ? escapeHtml(description) : null,
+          size,
+          path: backupPath,
+          createdBy: req.currentUser?.id,
+        });
+
+        await storage.addActivity({
+          type: "backup_create",
+          title: "Backup Created",
+          description: `Backup '${name}' created for server '${server.name}'`,
+          timestamp: new Date(),
+          userId: req.currentUser?.id,
+        }).catch(() => {});
+
+        res.status(201).json(backup);
+      } catch (error: any) {
+        console.error("Backup creation error:", error);
+        res.status(500).json({ message: error.message || "Failed to create backup" });
+      }
+    }
+  );
+
+  app.post(
+    "/api/servers/:id/backups/:backupId/restore",
+    requireAuth,
+    requirePermission("servers.control"),
+    requireCSRF,
+    checkServerAccess,
+    async (req, res) => {
+      try {
+        if (!isValidUUID(req.params.id) || !isValidUUID(req.params.backupId)) {
+          return res.status(400).json({ message: "Invalid ID format" });
+        }
+
+        const server = await storage.getServer(req.params.id);
+        if (!server || !server.containerId) {
+          return res.status(404).json({ message: "Server not found or container not created" });
+        }
+
+        const backup = await storage.getBackup(req.params.backupId);
+        if (!backup || backup.serverId !== req.params.id) {
+          return res.status(404).json({ message: "Backup not found" });
+        }
+
+        const node = await storage.getNode(server.nodeId);
+        if (!node) {
+          return res.status(404).json({ message: "Node not found" });
+        }
+
+        const container = await dockerManager.getContainer(node, server.containerId);
+
+        // Восстанавливаем из бекапа
+        const exec = await container.exec({
+          Cmd: ["/bin/sh", "-c", `cd /data && rm -rf * && tar -xzf ${backup.path} -C /data`],
+          AttachStdout: true,
+          AttachStderr: true,
+        });
+
+        const stream = await exec.start({ hijack: true, stdin: false });
+        let output = "";
+        stream.on("data", (chunk: Buffer) => {
+          output += chunk.toString();
+        });
+
+        await new Promise<void>((resolve, reject) => {
+          stream.on("end", resolve);
+          stream.on("error", reject);
+          setTimeout(() => reject(new Error("Restore timeout")), 300000);
+        });
+
+        await storage.addActivity({
+          type: "backup_restore",
+          title: "Backup Restored",
+          description: `Backup '${backup.name}' restored for server '${server.name}'`,
+          timestamp: new Date(),
+          userId: req.currentUser?.id,
+        }).catch(() => {});
+
+        res.json({ message: "Backup restored successfully" });
+      } catch (error: any) {
+        console.error("Backup restore error:", error);
+        res.status(500).json({ message: error.message || "Failed to restore backup" });
+      }
+    }
+  );
+
+  app.delete(
+    "/api/servers/:id/backups/:backupId",
+    requireAuth,
+    requirePermission("servers.control"),
+    requireCSRF,
+    checkServerAccess,
+    async (req, res) => {
+      try {
+        if (!isValidUUID(req.params.id) || !isValidUUID(req.params.backupId)) {
+          return res.status(400).json({ message: "Invalid ID format" });
+        }
+
+        const backup = await storage.getBackup(req.params.backupId);
+        if (!backup || backup.serverId !== req.params.id) {
+          return res.status(404).json({ message: "Backup not found" });
+        }
+
+        const server = await storage.getServer(req.params.id);
+        if (server && server.containerId) {
+          const node = await storage.getNode(server.nodeId);
+          if (node) {
+            try {
+              const container = await dockerManager.getContainer(node, server.containerId);
+              const exec = await container.exec({
+                Cmd: ["/bin/sh", "-c", `rm -f ${backup.path}`],
+                AttachStdout: true,
+                AttachStderr: true,
+              });
+              await exec.start({ hijack: true, stdin: false });
+            } catch (error) {
+              // Игнорируем ошибки удаления файла
+            }
+          }
+        }
+
+        await storage.deleteBackup(req.params.backupId);
+
+        await storage.addActivity({
+          type: "backup_delete",
+          title: "Backup Deleted",
+          description: `Backup '${backup.name}' deleted`,
+          timestamp: new Date(),
+          userId: req.currentUser?.id,
+        }).catch(() => {});
+
+        res.json({ message: "Backup deleted successfully" });
+      } catch (error: any) {
+        res.status(500).json({ message: error.message || "Failed to delete backup" });
+      }
+    }
+  );
+
+  // Server Ports routes
+  app.get(
+    "/api/servers/:id/ports",
+    requireAuth,
+    requirePermission("servers.view"),
+    checkServerAccess,
+    async (req, res) => {
+      try {
+        if (!isValidUUID(req.params.id)) {
+          return res.status(400).json({ message: "Invalid server ID format" });
+        }
+        const ports = await storage.getPortsByServer(req.params.id);
+        res.json(ports);
+      } catch (error: any) {
+        res.status(500).json({ message: error.message || "Failed to get ports" });
+      }
+    }
+  );
+
+  app.post(
+    "/api/servers/:id/ports",
+    requireAuth,
+    requirePermission("servers.control"),
+    requireCSRF,
+    checkServerAccess,
+    async (req, res) => {
+      try {
+        if (!isValidUUID(req.params.id)) {
+          return res.status(400).json({ message: "Invalid server ID format" });
+        }
+
+        const server = await storage.getServer(req.params.id);
+        if (!server) {
+          return res.status(404).json({ message: "Server not found" });
+        }
+
+        // Проверка лимита портов
+        const ports = await storage.getPortsByServer(req.params.id);
+        const maxPorts = server.limits?.maxPorts;
+        if (maxPorts !== undefined && ports.length >= maxPorts) {
+          return res.status(403).json({ message: `Maximum port limit reached (${maxPorts})` });
+        }
+
+        const { port, protocol, name, description, isPublic } = req.body;
+        if (!port || typeof port !== "number" || port < 1 || port > 65535) {
+          return res.status(400).json({ message: "Valid port number (1-65535) is required" });
+        }
+
+        // Проверка доступности порта
+        const isAvailable = await storage.checkPortAvailable(port, req.params.id);
+        if (!isAvailable) {
+          return res.status(409).json({ message: "Port is already in use" });
+        }
+
+        const newPort = await storage.createPort({
+          serverId: req.params.id,
+          port,
+          protocol: protocol === "udp" ? "udp" : "tcp",
+          name: name ? escapeHtml(name) : null,
+          description: description ? escapeHtml(description) : null,
+          isPublic: isPublic === true,
+        });
+
+        await storage.addActivity({
+          type: "port_create",
+          title: "Port Added",
+          description: `Port ${port}/${newPort.protocol} added to server '${server.name}'`,
+          timestamp: new Date(),
+          userId: req.currentUser?.id,
+        }).catch(() => {});
+
+        res.status(201).json(newPort);
+      } catch (error: any) {
+        res.status(500).json({ message: error.message || "Failed to create port" });
+      }
+    }
+  );
+
+  app.delete(
+    "/api/servers/:id/ports/:portId",
+    requireAuth,
+    requirePermission("servers.control"),
+    requireCSRF,
+    checkServerAccess,
+    async (req, res) => {
+      try {
+        if (!isValidUUID(req.params.id) || !isValidUUID(req.params.portId)) {
+          return res.status(400).json({ message: "Invalid ID format" });
+        }
+
+        const port = await storage.getPort(req.params.portId);
+        if (!port || port.serverId !== req.params.id) {
+          return res.status(404).json({ message: "Port not found" });
+        }
+
+        const server = await storage.getServer(req.params.id);
+        await storage.deletePort(req.params.portId);
+
+        await storage.addActivity({
+          type: "port_delete",
+          title: "Port Removed",
+          description: `Port ${port.port}/${port.protocol} removed from server '${server?.name || "unknown"}'`,
+          timestamp: new Date(),
+          userId: req.currentUser?.id,
+        }).catch(() => {});
+
+        res.json({ message: "Port deleted successfully" });
+      } catch (error: any) {
+        res.status(500).json({ message: error.message || "Failed to delete port" });
+      }
+    }
+  );
+
+  // SFTP Users routes
+  app.get(
+    "/api/servers/:id/sftp",
+    requireAuth,
+    requirePermission("servers.view"),
+    checkServerAccess,
+    async (req, res) => {
+      try {
+        if (!isValidUUID(req.params.id)) {
+          return res.status(400).json({ message: "Invalid server ID format" });
+        }
+        const users = await storage.getSftpUsersByServer(req.params.id);
+        // Не возвращаем пароли
+        const safeUsers = users.map(({ password, ...user }) => user);
+        res.json(safeUsers);
+      } catch (error: any) {
+        res.status(500).json({ message: error.message || "Failed to get SFTP users" });
+      }
+    }
+  );
+
+  app.post(
+    "/api/servers/:id/sftp",
+    requireAuth,
+    requirePermission("servers.control"),
+    requireCSRF,
+    checkServerAccess,
+    async (req, res) => {
+      try {
+        if (!isValidUUID(req.params.id)) {
+          return res.status(400).json({ message: "Invalid server ID format" });
+        }
+
+        const server = await storage.getServer(req.params.id);
+        if (!server) {
+          return res.status(404).json({ message: "Server not found" });
+        }
+
+        // Проверка лимита SFTP пользователей
+        const sftpUsers = await storage.getSftpUsersByServer(req.params.id);
+        const maxSftpUsers = server.limits?.maxSftpUsers;
+        if (maxSftpUsers !== undefined && sftpUsers.length >= maxSftpUsers) {
+          return res.status(403).json({ message: `Maximum SFTP user limit reached (${maxSftpUsers})` });
+        }
+
+        const { username, password, homeDirectory } = req.body;
+        if (!username || typeof username !== "string" || username.length < 3) {
+          return res.status(400).json({ message: "Username must be at least 3 characters" });
+        }
+        if (!password || typeof password !== "string" || password.length < 4) {
+          return res.status(400).json({ message: "Password must be at least 4 characters" });
+        }
+
+        // Проверка уникальности имени пользователя для этого сервера
+        const existingUser = sftpUsers.find(u => u.username === username);
+        if (existingUser) {
+          return res.status(409).json({ message: "Username already exists for this server" });
+        }
+
+        // Хешируем пароль
+        const passwordHash = await bcrypt.hash(password, 10);
+
+        const sftpUser = await storage.createSftpUser({
+          serverId: req.params.id,
+          username: sanitizeUsername(username),
+          password: passwordHash,
+          homeDirectory: homeDirectory ? sanitizePath(homeDirectory) : "/data",
+          createdBy: req.currentUser?.id,
+        });
+
+        // Настраиваем SFTP пользователя внутри контейнера
+        if (server.containerId) {
+          try {
+            const node = await storage.getNode(server.nodeId);
+            if (node) {
+              await setupSftpUserInContainer(node, server.containerId, {
+                username: sanitizeUsername(username),
+                password: password, // Используем оригинальный пароль для установки в системе
+                homeDirectory: homeDirectory ? sanitizePath(homeDirectory) : "/data",
+              });
+            }
+          } catch (error: any) {
+            console.error("Failed to setup SFTP user in container:", error);
+            // Не прерываем создание пользователя, но логируем ошибку
+          }
+        }
+
+        await storage.addActivity({
+          type: "sftp_user_create",
+          title: "SFTP User Created",
+          description: `SFTP user '${username}' created for server '${server.name}'`,
+          timestamp: new Date(),
+          userId: req.currentUser?.id,
+        }).catch(() => {});
+
+        // Возвращаем пользователя без пароля
+        const { password: _, ...safeUser } = sftpUser;
+        res.status(201).json(safeUser);
+      } catch (error: any) {
+        res.status(500).json({ message: error.message || "Failed to create SFTP user" });
+      }
+    }
+  );
+
+  app.delete(
+    "/api/servers/:id/sftp/:userId",
+    requireAuth,
+    requirePermission("servers.control"),
+    requireCSRF,
+    checkServerAccess,
+    async (req, res) => {
+      try {
+        if (!isValidUUID(req.params.id) || !isValidUUID(req.params.userId)) {
+          return res.status(400).json({ message: "Invalid ID format" });
+        }
+
+        const sftpUser = await storage.getSftpUser(req.params.userId);
+        if (!sftpUser || sftpUser.serverId !== req.params.id) {
+          return res.status(404).json({ message: "SFTP user not found" });
+        }
+
+        const server = await storage.getServer(req.params.id);
+        
+        // Удаляем SFTP пользователя из контейнера
+        if (server && server.containerId) {
+          try {
+            const node = await storage.getNode(server.nodeId);
+            if (node) {
+              await removeSftpUserFromContainer(node, server.containerId, sftpUser.username);
+            }
+          } catch (error: any) {
+            console.error("Failed to remove SFTP user from container:", error);
+            // Продолжаем удаление из базы данных даже если не удалось удалить из контейнера
+          }
+        }
+
+        await storage.deleteSftpUser(req.params.userId);
+
+        await storage.addActivity({
+          type: "sftp_user_delete",
+          title: "SFTP User Deleted",
+          description: `SFTP user '${sftpUser.username}' deleted from server '${server?.name || "unknown"}'`,
+          timestamp: new Date(),
+          userId: req.currentUser?.id,
+        }).catch(() => {});
+
+        res.json({ message: "SFTP user deleted successfully" });
+      } catch (error: any) {
+        res.status(500).json({ message: error.message || "Failed to delete SFTP user" });
+      }
+    }
+  );
+
   // Node routes
   app.get("/api/nodes", requireAuth, requirePermission("nodes.manage"), async (req, res) => {
     const nodes = await storage.getAllNodes();
@@ -1819,7 +2442,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
               details: `Attempted to execute command on non-existent server: ${data.serverId}`,
               timestamp: new Date(),
             });
-
+            
             ws.send(JSON.stringify({
               type: "command_error",
               serverId: data.serverId,
@@ -1839,7 +2462,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
               details: `WebSocket: Attempted dangerous command: ${data.command?.substring(0, 50)}`,
               timestamp: new Date(),
             });
-
+            
             ws.send(JSON.stringify({
               type: "command_error",
               serverId: data.serverId,
@@ -1856,7 +2479,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
               details: `WebSocket: Attempted suspicious command: ${command.substring(0, 100)}`,
               timestamp: new Date(),
             });
-
+            
             ws.send(JSON.stringify({
               type: "command_error",
               serverId: data.serverId,
@@ -2026,5 +2649,167 @@ async function createGameServerContainer(server: Server, node: any) {
     
     // Если подключение есть, но создание контейнера не удалось - пробрасываем ошибку дальше
     throw new Error(`Failed to create container on node ${node.name}: ${error.message || error}`);
+  }
+}
+
+// Helper function to setup SFTP user in container
+async function setupSftpUserInContainer(
+  node: Node,
+  containerId: string,
+  user: { username: string; password: string; homeDirectory: string }
+): Promise<void> {
+  try {
+    const container = await dockerManager.getContainer(node, containerId);
+    
+    // Проверяем, запущен ли контейнер
+    const inspect = await container.inspect();
+    if (!inspect.State.Running) {
+      throw new Error("Container is not running. Start the server first to configure SFTP.");
+    }
+
+    // Устанавливаем openssh-server если его нет (для Ubuntu/Debian образов)
+    const installSshScript = `
+      if ! command -v sshd &> /dev/null; then
+        if command -v apt-get &> /dev/null; then
+          apt-get update -qq && apt-get install -y -qq openssh-server > /dev/null 2>&1 || true
+        elif command -v yum &> /dev/null; then
+          yum install -y -q openssh-server > /dev/null 2>&1 || true
+        elif command -v apk &> /dev/null; then
+          apk add --quiet openssh > /dev/null 2>&1 || true
+        fi
+      fi
+    `;
+
+    const installExec = await container.exec({
+      Cmd: ["/bin/sh", "-c", installSshScript],
+      AttachStdout: true,
+      AttachStderr: true,
+    });
+
+    await installExec.start({ hijack: true, stdin: false });
+    await new Promise<void>((resolve) => {
+      setTimeout(() => resolve(), 5000); // Даем время на установку
+    });
+
+    // Создаем пользователя и настраиваем его
+    const safeUsername = user.username.replace(/[^a-zA-Z0-9_-]/g, "");
+    const safeHomeDir = user.homeDirectory.replace(/"/g, '\\"');
+    
+    const setupUserScript = `
+      # Создаем пользователя если его нет
+      if ! id -u "${safeUsername}" &> /dev/null; then
+        useradd -m -d "${safeHomeDir}" -s /usr/sbin/nologin "${safeUsername}" 2>/dev/null || true
+      fi
+      
+      # Устанавливаем пароль
+      echo "${safeUsername}:${user.password}" | chpasswd 2>/dev/null || true
+      
+      # Создаем домашнюю директорию если её нет
+      mkdir -p "${safeHomeDir}" 2>/dev/null || true
+      chown "${safeUsername}:${safeUsername}" "${safeHomeDir}" 2>/dev/null || true
+      chmod 755 "${safeHomeDir}" 2>/dev/null || true
+    `;
+
+    const setupExec = await container.exec({
+      Cmd: ["/bin/sh", "-c", setupUserScript],
+      AttachStdout: true,
+      AttachStderr: true,
+      User: "root",
+    });
+
+    const setupStream = await setupExec.start({ hijack: true, stdin: false });
+    await new Promise<void>((resolve) => {
+      setupStream.on("end", resolve);
+      setupStream.on("error", () => resolve());
+      setTimeout(() => resolve(), 10000);
+    });
+
+    // Настраиваем SSH для SFTP (добавляем конфигурацию если её нет)
+    const sshConfigScript = `
+      # Создаем директорию для SSH конфигурации если её нет
+      mkdir -p /etc/ssh/sshd_config.d 2>/dev/null || true
+      
+      # Добавляем конфигурацию для SFTP пользователя
+      if ! grep -q "Match User ${safeUsername}" /etc/ssh/sshd_config 2>/dev/null; then
+        echo "" >> /etc/ssh/sshd_config
+        echo "Match User ${safeUsername}" >> /etc/ssh/sshd_config
+        echo "  ForceCommand internal-sftp" >> /etc/ssh/sshd_config
+        echo "  ChrootDirectory ${safeHomeDir}" >> /etc/ssh/sshd_config
+        echo "  PermitTunnel no" >> /etc/ssh/sshd_config
+        echo "  AllowAgentForwarding no" >> /etc/ssh/sshd_config
+        echo "  AllowTcpForwarding no" >> /etc/ssh/sshd_config
+        echo "  X11Forwarding no" >> /etc/ssh/sshd_config
+      fi
+      
+      # Запускаем SSH сервер если он не запущен
+      if ! pgrep -x sshd > /dev/null; then
+        /usr/sbin/sshd -D &
+      else
+        # Перезагружаем конфигурацию SSH
+        pkill -HUP sshd 2>/dev/null || true
+      fi
+    `;
+
+    const sshConfigExec = await container.exec({
+      Cmd: ["/bin/sh", "-c", sshConfigScript],
+      AttachStdout: true,
+      AttachStderr: true,
+      User: "root",
+    });
+
+    const sshConfigStream = await sshConfigExec.start({ hijack: true, stdin: false });
+    await new Promise<void>((resolve) => {
+      sshConfigStream.on("end", resolve);
+      sshConfigStream.on("error", () => resolve());
+      setTimeout(() => resolve(), 10000);
+    });
+
+  } catch (error: any) {
+    console.error("Error setting up SFTP user in container:", error);
+    throw error;
+  }
+}
+
+// Helper function to remove SFTP user from container
+async function removeSftpUserFromContainer(
+  node: Node,
+  containerId: string,
+  username: string
+): Promise<void> {
+  try {
+    const container = await dockerManager.getContainer(node, containerId);
+    
+    const safeUsername = username.replace(/[^a-zA-Z0-9_-]/g, "");
+    
+    // Удаляем пользователя из системы
+    const removeUserScript = `
+      if id -u "${safeUsername}" &> /dev/null; then
+        userdel -r "${safeUsername}" 2>/dev/null || true
+      fi
+      
+      # Удаляем конфигурацию SSH для этого пользователя
+      if [ -f /etc/ssh/sshd_config ]; then
+        sed -i '/Match User ${safeUsername}/,/X11Forwarding no/d' /etc/ssh/sshd_config 2>/dev/null || true
+        pkill -HUP sshd 2>/dev/null || true
+      fi
+    `;
+
+    const removeExec = await container.exec({
+      Cmd: ["/bin/sh", "-c", removeUserScript],
+      AttachStdout: true,
+      AttachStderr: true,
+      User: "root",
+    });
+
+    const removeStream = await removeExec.start({ hijack: true, stdin: false });
+    await new Promise<void>((resolve) => {
+      removeStream.on("end", resolve);
+      removeStream.on("error", () => resolve());
+      setTimeout(() => resolve(), 5000);
+    });
+
+  } catch (error: any) {
+    console.error("Error removing SFTP user from container:", error);
+    throw error;
   }
 }

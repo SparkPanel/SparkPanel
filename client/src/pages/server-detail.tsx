@@ -1,7 +1,7 @@
 import { useParams, useLocation, Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState, useEffect, useRef } from "react";
-import { ArrowLeft, Play, Square, RotateCw, Trash2, Terminal, FolderOpen, Settings as SettingsIcon, BarChart3, Send } from "lucide-react";
+import { ArrowLeft, Play, Square, RotateCw, Trash2, Terminal, FolderOpen, Settings as SettingsIcon, BarChart3, Send, Database, Network, Key } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { Server, ServerStats, ConsoleLog, FileEntry } from "@shared/schema";
+import type { Server, ServerStats, ConsoleLog, FileEntry, Node } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
@@ -154,40 +154,92 @@ export default function ServerDetailPage() {
       </div>
 
       <Tabs defaultValue="console" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="console" data-testid="tab-console">
-            <Terminal className="w-4 h-4 mr-2" />
-            Console
-          </TabsTrigger>
-          <TabsTrigger value="files" data-testid="tab-files">
-            <FolderOpen className="w-4 h-4 mr-2" />
-            Files
-          </TabsTrigger>
-          <TabsTrigger value="stats" data-testid="tab-stats">
-            <BarChart3 className="w-4 h-4 mr-2" />
-            Statistics
-          </TabsTrigger>
-          <TabsTrigger value="settings" data-testid="tab-settings">
-            <SettingsIcon className="w-4 h-4 mr-2" />
-            Settings
-          </TabsTrigger>
+        <TabsList className="flex-wrap">
+          {(!server.visibility || server.visibility.console !== false) && (
+            <TabsTrigger value="console" data-testid="tab-console">
+              <Terminal className="w-4 h-4 mr-2" />
+              Console
+            </TabsTrigger>
+          )}
+          {(!server.visibility || server.visibility.files !== false) && (
+            <TabsTrigger value="files" data-testid="tab-files">
+              <FolderOpen className="w-4 h-4 mr-2" />
+              Files
+            </TabsTrigger>
+          )}
+          {(!server.visibility || server.visibility.stats !== false) && (
+            <TabsTrigger value="stats" data-testid="tab-stats">
+              <BarChart3 className="w-4 h-4 mr-2" />
+              Statistics
+            </TabsTrigger>
+          )}
+          {(!server.visibility || server.visibility.backups !== false) && (
+            <TabsTrigger value="backups" data-testid="tab-backups">
+              <Database className="w-4 h-4 mr-2" />
+              Backups
+            </TabsTrigger>
+          )}
+          {(!server.visibility || server.visibility.ports !== false) && (
+            <TabsTrigger value="ports" data-testid="tab-ports">
+              <Network className="w-4 h-4 mr-2" />
+              Ports
+            </TabsTrigger>
+          )}
+          {(!server.visibility || server.visibility.sftp !== false) && (
+            <TabsTrigger value="sftp" data-testid="tab-sftp">
+              <Key className="w-4 h-4 mr-2" />
+              SFTP
+            </TabsTrigger>
+          )}
+          {(!server.visibility || server.visibility.settings !== false) && (
+            <TabsTrigger value="settings" data-testid="tab-settings">
+              <SettingsIcon className="w-4 h-4 mr-2" />
+              Settings
+            </TabsTrigger>
+          )}
         </TabsList>
 
-        <TabsContent value="console" className="space-y-4">
-          <ConsoleTab serverId={server.id} isRunning={server.status === "running"} />
-        </TabsContent>
+        {(!server.visibility || server.visibility.console !== false) && (
+          <TabsContent value="console" className="space-y-4">
+            <ConsoleTab serverId={server.id} isRunning={server.status === "running"} />
+          </TabsContent>
+        )}
 
-        <TabsContent value="files" className="space-y-4">
-          <FilesTab serverId={server.id} />
-        </TabsContent>
+        {(!server.visibility || server.visibility.files !== false) && (
+          <TabsContent value="files" className="space-y-4">
+            <FilesTab serverId={server.id} />
+          </TabsContent>
+        )}
 
-        <TabsContent value="stats" className="space-y-4">
-          <StatsTab server={server} stats={stats} />
-        </TabsContent>
+        {(!server.visibility || server.visibility.stats !== false) && (
+          <TabsContent value="stats" className="space-y-4">
+            <StatsTab server={server} stats={stats} />
+          </TabsContent>
+        )}
 
-        <TabsContent value="settings" className="space-y-4">
-          <SettingsTab server={server} />
-        </TabsContent>
+        {(!server.visibility || server.visibility.backups !== false) && (
+          <TabsContent value="backups" className="space-y-4">
+            <BackupsTab serverId={server.id} server={server} />
+          </TabsContent>
+        )}
+
+        {(!server.visibility || server.visibility.ports !== false) && (
+          <TabsContent value="ports" className="space-y-4">
+            <PortsTab serverId={server.id} server={server} />
+          </TabsContent>
+        )}
+
+        {(!server.visibility || server.visibility.sftp !== false) && (
+          <TabsContent value="sftp" className="space-y-4">
+            <SftpTab serverId={server.id} server={server} />
+          </TabsContent>
+        )}
+
+        {(!server.visibility || server.visibility.settings !== false) && (
+          <TabsContent value="settings" className="space-y-4">
+            <SettingsTab server={server} />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );
@@ -631,6 +683,673 @@ function SettingsTab({ server }: { server: Server }) {
             <p className="font-medium mt-1">{server.ramLimit} GB</p>
           </div>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+interface Backup {
+  id: string;
+  serverId: string;
+  name: string;
+  description?: string | null;
+  size: number;
+  path: string;
+  createdAt: string;
+}
+
+function BackupsTab({ serverId, server }: { serverId: string; server: Server }) {
+  const { data: backups = [], refetch } = useQuery<Backup[]>({
+    queryKey: ["/api/servers", serverId, "backups"],
+  });
+  const { toast } = useToast();
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [backupName, setBackupName] = useState("");
+  const [backupDescription, setBackupDescription] = useState("");
+
+  const createBackupMutation = useMutation({
+    mutationFn: async () => {
+      const meResponse = await fetch("/api/auth/me", { credentials: "include" });
+      const meData = await meResponse.json();
+      const csrfToken = meData.csrfToken;
+
+      const response = await fetch(`/api/servers/${serverId}/backups`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": csrfToken,
+        },
+        body: JSON.stringify({ name: backupName, description: backupDescription }),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to create backup");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Backup created", description: "Backup has been created successfully" });
+      setCreateDialogOpen(false);
+      setBackupName("");
+      setBackupDescription("");
+      refetch();
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to create backup", description: error.message || "An error occurred", variant: "destructive" });
+    },
+  });
+
+  const restoreBackupMutation = useMutation({
+    mutationFn: async (backupId: string) => {
+      const meResponse = await fetch("/api/auth/me", { credentials: "include" });
+      const meData = await meResponse.json();
+      const csrfToken = meData.csrfToken;
+
+      const response = await fetch(`/api/servers/${serverId}/backups/${backupId}/restore`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "X-CSRF-Token": csrfToken,
+        },
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to restore backup");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Backup restored", description: "Backup has been restored successfully" });
+      refetch();
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to restore backup", description: error.message || "An error occurred", variant: "destructive" });
+    },
+  });
+
+  const deleteBackupMutation = useMutation({
+    mutationFn: async (backupId: string) => {
+      const meResponse = await fetch("/api/auth/me", { credentials: "include" });
+      const meData = await meResponse.json();
+      const csrfToken = meData.csrfToken;
+
+      const response = await fetch(`/api/servers/${serverId}/backups/${backupId}`, {
+        method: "DELETE",
+        credentials: "include",
+        headers: {
+          "X-CSRF-Token": csrfToken,
+        },
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to delete backup");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Backup deleted", description: "Backup has been deleted successfully" });
+      refetch();
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to delete backup", description: error.message || "An error occurred", variant: "destructive" });
+    },
+  });
+
+  const maxBackups = server.limits?.maxBackups;
+  const canCreateBackup = maxBackups === undefined || backups.length < maxBackups;
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+        <CardTitle>Backups</CardTitle>
+        <div className="flex items-center gap-2">
+          {maxBackups !== undefined && (
+            <span className="text-sm text-muted-foreground">
+              {backups.length} / {maxBackups}
+            </span>
+          )}
+          <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm" disabled={!canCreateBackup}>
+                Create Backup
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create Backup</DialogTitle>
+                <DialogDescription>Create a backup of the server files</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label>Backup Name</Label>
+                  <Input
+                    value={backupName}
+                    onChange={(e) => setBackupName(e.target.value)}
+                    className="mt-2"
+                    placeholder="backup-2024-01-01"
+                  />
+                </div>
+                <div>
+                  <Label>Description (optional)</Label>
+                  <Input
+                    value={backupDescription}
+                    onChange={(e) => setBackupDescription(e.target.value)}
+                    className="mt-2"
+                    placeholder="Pre-update backup"
+                  />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => createBackupMutation.mutate()}
+                    disabled={createBackupMutation.isPending || !backupName.trim()}
+                  >
+                    {createBackupMutation.isPending ? "Creating..." : "Create"}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {backups.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <Database className="w-12 h-12 mx-auto mb-2 opacity-50" />
+            No backups yet
+          </div>
+        ) : (
+          <ScrollArea className="h-96">
+            <div className="space-y-2">
+              {backups.map((backup) => (
+                <div key={backup.id} className="flex items-center justify-between p-3 rounded-md border">
+                  <div className="flex-1">
+                    <div className="font-medium">{backup.name}</div>
+                    {backup.description && (
+                      <div className="text-sm text-muted-foreground">{backup.description}</div>
+                    )}
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {(backup.size / 1024 / 1024).toFixed(2)} MB • {new Date(backup.createdAt).toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        if (confirm("Are you sure you want to restore this backup? This will overwrite current files.")) {
+                          restoreBackupMutation.mutate(backup.id);
+                        }
+                      }}
+                      disabled={restoreBackupMutation.isPending}
+                    >
+                      Restore
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => {
+                        if (confirm("Are you sure you want to delete this backup?")) {
+                          deleteBackupMutation.mutate(backup.id);
+                        }
+                      }}
+                      disabled={deleteBackupMutation.isPending}
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+interface ServerPort {
+  id: string;
+  serverId: string;
+  port: number;
+  protocol: string;
+  name?: string | null;
+  description?: string | null;
+  isPublic: boolean;
+  createdAt: string;
+}
+
+function PortsTab({ serverId, server }: { serverId: string; server: Server }) {
+  const { data: ports = [], refetch } = useQuery<ServerPort[]>({
+    queryKey: ["/api/servers", serverId, "ports"],
+  });
+  const { toast } = useToast();
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [portNumber, setPortNumber] = useState("");
+  const [protocol, setProtocol] = useState<"tcp" | "udp">("tcp");
+  const [portName, setPortName] = useState("");
+  const [portDescription, setPortDescription] = useState("");
+  const [isPublic, setIsPublic] = useState(false);
+
+  const createPortMutation = useMutation({
+    mutationFn: async () => {
+      const meResponse = await fetch("/api/auth/me", { credentials: "include" });
+      const meData = await meResponse.json();
+      const csrfToken = meData.csrfToken;
+
+      const response = await fetch(`/api/servers/${serverId}/ports`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": csrfToken,
+        },
+        body: JSON.stringify({
+          port: parseInt(portNumber),
+          protocol,
+          name: portName || null,
+          description: portDescription || null,
+          isPublic,
+        }),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to create port");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Port added", description: "Port has been added successfully" });
+      setCreateDialogOpen(false);
+      setPortNumber("");
+      setPortName("");
+      setPortDescription("");
+      setIsPublic(false);
+      refetch();
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to add port", description: error.message || "An error occurred", variant: "destructive" });
+    },
+  });
+
+  const deletePortMutation = useMutation({
+    mutationFn: async (portId: string) => {
+      const meResponse = await fetch("/api/auth/me", { credentials: "include" });
+      const meData = await meResponse.json();
+      const csrfToken = meData.csrfToken;
+
+      const response = await fetch(`/api/servers/${serverId}/ports/${portId}`, {
+        method: "DELETE",
+        credentials: "include",
+        headers: {
+          "X-CSRF-Token": csrfToken,
+        },
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to delete port");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Port deleted", description: "Port has been deleted successfully" });
+      refetch();
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to delete port", description: error.message || "An error occurred", variant: "destructive" });
+    },
+  });
+
+  const maxPorts = server.limits?.maxPorts;
+  const canCreatePort = maxPorts === undefined || ports.length < maxPorts;
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+        <CardTitle>Ports</CardTitle>
+        <div className="flex items-center gap-2">
+          {maxPorts !== undefined && (
+            <span className="text-sm text-muted-foreground">
+              {ports.length} / {maxPorts}
+            </span>
+          )}
+          <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm" disabled={!canCreatePort}>
+                Add Port
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add Port</DialogTitle>
+                <DialogDescription>Add a new port mapping for this server</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label>Port Number</Label>
+                  <Input
+                    type="number"
+                    value={portNumber}
+                    onChange={(e) => setPortNumber(e.target.value)}
+                    className="mt-2"
+                    placeholder="25565"
+                    min="1"
+                    max="65535"
+                  />
+                </div>
+                <div>
+                  <Label>Protocol</Label>
+                  <select
+                    value={protocol}
+                    onChange={(e) => setProtocol(e.target.value as "tcp" | "udp")}
+                    className="mt-2 w-full p-2 border rounded-md"
+                  >
+                    <option value="tcp">TCP</option>
+                    <option value="udp">UDP</option>
+                  </select>
+                </div>
+                <div>
+                  <Label>Name (optional)</Label>
+                  <Input
+                    value={portName}
+                    onChange={(e) => setPortName(e.target.value)}
+                    className="mt-2"
+                    placeholder="Rcon, Query, etc."
+                  />
+                </div>
+                <div>
+                  <Label>Description (optional)</Label>
+                  <Input
+                    value={portDescription}
+                    onChange={(e) => setPortDescription(e.target.value)}
+                    className="mt-2"
+                    placeholder="Remote console port"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="isPublic"
+                    checked={isPublic}
+                    onChange={(e) => setIsPublic(e.target.checked)}
+                    className="w-4 h-4"
+                  />
+                  <Label htmlFor="isPublic">Public port (accessible from internet)</Label>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => createPortMutation.mutate()}
+                    disabled={createPortMutation.isPending || !portNumber || parseInt(portNumber) < 1 || parseInt(portNumber) > 65535}
+                  >
+                    {createPortMutation.isPending ? "Adding..." : "Add"}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="mb-4 p-3 rounded-md bg-muted">
+          <div className="font-medium">Main Port: {server.port}/tcp</div>
+        </div>
+        {ports.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <Network className="w-12 h-12 mx-auto mb-2 opacity-50" />
+            No additional ports configured
+          </div>
+        ) : (
+          <ScrollArea className="h-96">
+            <div className="space-y-2">
+              {ports.map((port) => (
+                <div key={port.id} className="flex items-center justify-between p-3 rounded-md border">
+                  <div className="flex-1">
+                    <div className="font-medium">
+                      {port.port}/{port.protocol.toUpperCase()}
+                      {port.name && <span className="ml-2 text-muted-foreground">({port.name})</span>}
+                    </div>
+                    {port.description && (
+                      <div className="text-sm text-muted-foreground">{port.description}</div>
+                    )}
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {port.isPublic ? "Public" : "Internal"} • {new Date(port.createdAt).toLocaleString()}
+                    </div>
+                  </div>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => {
+                      if (confirm("Are you sure you want to delete this port?")) {
+                        deletePortMutation.mutate(port.id);
+                      }
+                    }}
+                    disabled={deletePortMutation.isPending}
+                  >
+                    Delete
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+interface SftpUser {
+  id: string;
+  serverId: string;
+  username: string;
+  homeDirectory: string;
+  isActive: boolean;
+  createdAt: string;
+}
+
+function SftpTab({ serverId, server }: { serverId: string; server: Server }) {
+  const { data: sftpUsers = [], refetch } = useQuery<SftpUser[]>({
+    queryKey: ["/api/servers", serverId, "sftp"],
+  });
+  const { data: node } = useQuery<Node>({
+    queryKey: ["/api/nodes", server.nodeId],
+  });
+  const { toast } = useToast();
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [homeDirectory, setHomeDirectory] = useState("/data");
+
+  const createSftpUserMutation = useMutation({
+    mutationFn: async () => {
+      const meResponse = await fetch("/api/auth/me", { credentials: "include" });
+      const meData = await meResponse.json();
+      const csrfToken = meData.csrfToken;
+
+      const response = await fetch(`/api/servers/${serverId}/sftp`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": csrfToken,
+        },
+        body: JSON.stringify({ username, password, homeDirectory }),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to create SFTP user");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({ title: "SFTP user created", description: "SFTP user has been created successfully" });
+      setCreateDialogOpen(false);
+      setUsername("");
+      setPassword("");
+      setHomeDirectory("/data");
+      refetch();
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to create SFTP user", description: error.message || "An error occurred", variant: "destructive" });
+    },
+  });
+
+  const deleteSftpUserMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      const meResponse = await fetch("/api/auth/me", { credentials: "include" });
+      const meData = await meResponse.json();
+      const csrfToken = meData.csrfToken;
+
+      const response = await fetch(`/api/servers/${serverId}/sftp/${userId}`, {
+        method: "DELETE",
+        credentials: "include",
+        headers: {
+          "X-CSRF-Token": csrfToken,
+        },
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to delete SFTP user");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({ title: "SFTP user deleted", description: "SFTP user has been deleted successfully" });
+      refetch();
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to delete SFTP user", description: error.message || "An error occurred", variant: "destructive" });
+    },
+  });
+
+  const maxSftpUsers = server.limits?.maxSftpUsers;
+  const canCreateUser = maxSftpUsers === undefined || sftpUsers.length < maxSftpUsers;
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+        <CardTitle>SFTP Users</CardTitle>
+        <div className="flex items-center gap-2">
+          {maxSftpUsers !== undefined && (
+            <span className="text-sm text-muted-foreground">
+              {sftpUsers.length} / {maxSftpUsers}
+            </span>
+          )}
+          <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm" disabled={!canCreateUser}>
+                Create SFTP User
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create SFTP User</DialogTitle>
+                <DialogDescription>Create a new SFTP user for file access</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label>Username</Label>
+                  <Input
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    className="mt-2"
+                    placeholder="sftp_user"
+                  />
+                </div>
+                <div>
+                  <Label>Password</Label>
+                  <Input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="mt-2"
+                    placeholder="••••••••"
+                  />
+                </div>
+                <div>
+                  <Label>Home Directory</Label>
+                  <Input
+                    value={homeDirectory}
+                    onChange={(e) => setHomeDirectory(e.target.value)}
+                    className="mt-2"
+                    placeholder="/data"
+                  />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => createSftpUserMutation.mutate()}
+                    disabled={createSftpUserMutation.isPending || !username.trim() || !password.trim()}
+                  >
+                    {createSftpUserMutation.isPending ? "Creating..." : "Create"}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {sftpUsers.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <Key className="w-12 h-12 mx-auto mb-2 opacity-50" />
+            No SFTP users configured
+          </div>
+        ) : (
+          <>
+            <div className="mb-4 p-4 rounded-md bg-muted space-y-2">
+              <div className="font-medium text-sm">SFTP Connection Info:</div>
+              <div className="text-sm space-y-1">
+                <div>
+                  <span className="text-muted-foreground">Host:</span>{" "}
+                  <span className="font-mono">{node?.ip || "N/A"}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Port:</span>{" "}
+                  <span className="font-mono">22</span>{" "}
+                  <span className="text-xs text-muted-foreground">(or use SFTP port if configured)</span>
+                </div>
+                <div className="text-xs text-muted-foreground mt-2">
+                  Use FileZilla, WinSCP, or any SFTP client to connect. Make sure port 22 is exposed from the container.
+                </div>
+              </div>
+            </div>
+            <ScrollArea className="h-96">
+              <div className="space-y-2">
+                {sftpUsers.map((user) => (
+                  <div key={user.id} className="flex items-center justify-between p-3 rounded-md border">
+                    <div className="flex-1">
+                      <div className="font-medium">{user.username}</div>
+                      <div className="text-sm text-muted-foreground">Home: {user.homeDirectory}</div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {user.isActive ? "Active" : "Inactive"} • {new Date(user.createdAt).toLocaleString()}
+                      </div>
+                    </div>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => {
+                        if (confirm("Are you sure you want to delete this SFTP user?")) {
+                          deleteSftpUserMutation.mutate(user.id);
+                        }
+                      }}
+                      disabled={deleteSftpUserMutation.isPending}
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+          </>
+        )}
       </CardContent>
     </Card>
   );

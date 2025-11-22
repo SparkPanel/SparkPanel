@@ -1,6 +1,6 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Activity, HardDrive, Play, Square, Plus, Trash2, RotateCw, LogIn, KeyRound, Terminal, ShieldAlert, UserPlus, UserMinus, UserCog, User } from "lucide-react";
+import { Activity, HardDrive, Play, Square, Plus, Trash2, RotateCw, LogIn, KeyRound, Terminal, ShieldAlert, UserPlus, UserMinus, UserCog, User, Database, Network, Key } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import type { Activity as ActivityEntry, ActivityType } from "@shared/schema";
 import type { LucideIcon } from "lucide-react";
@@ -16,6 +16,13 @@ const iconMap: Record<ActivityType, LucideIcon> = {
   server_create: Plus,
   server_delete: Trash2,
   server_command: Terminal,
+  backup_create: Database,
+  backup_restore: Database,
+  backup_delete: Database,
+  port_create: Network,
+  port_delete: Network,
+  sftp_user_create: Key,
+  sftp_user_delete: Key,
   node_add: HardDrive,
   node_delete: Trash2,
   user_login: LogIn,

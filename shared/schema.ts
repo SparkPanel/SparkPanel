@@ -129,6 +129,22 @@ export const servers = pgTable("servers", {
   port: integer("port").notNull(),
   autoStart: boolean("auto_start").notNull().default(false),
   config: jsonb("config").default({}),
+  // Visibility settings - какие компоненты видны пользователям
+  visibility: jsonb("visibility").$type<{
+    console?: boolean;
+    files?: boolean;
+    stats?: boolean;
+    settings?: boolean;
+    backups?: boolean;
+    ports?: boolean;
+    sftp?: boolean;
+  }>().default({}),
+  // Limits - лимиты для различных функций
+  limits: jsonb("limits").$type<{
+    maxPorts?: number;
+    maxBackups?: number;
+    maxSftpUsers?: number;
+  }>().default({}),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -161,6 +177,13 @@ export const activityTypes = [
   "server_create",
   "server_delete",
   "server_command",
+  "backup_create",
+  "backup_restore",
+  "backup_delete",
+  "port_create",
+  "port_delete",
+  "sftp_user_create",
+  "sftp_user_delete",
   "node_add",
   "node_delete",
   "user_login",
@@ -168,7 +191,7 @@ export const activityTypes = [
   "user_create",
   "user_update",
   "user_delete",
-  "security_event", // События безопасности (попытки взлома, CSRF атаки и т.д.)
+  "security_event",
 ] as const;
 
 export type ActivityType = typeof activityTypes[number];
@@ -235,3 +258,48 @@ export const serverCommandSchema = z.object({
 });
 
 export type ServerCommand = z.infer<typeof serverCommandSchema>;
+
+// Backups table
+export const backups = pgTable("backups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  serverId: varchar("server_id").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  size: integer("size").notNull().default(0), // размер в байтах
+  path: text("path").notNull(), // путь к файлу бекапа
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdBy: varchar("created_by"), // ID пользователя, создавшего бекап
+});
+
+export type Backup = typeof backups.$inferSelect;
+export type InsertBackup = typeof backups.$inferInsert;
+
+// Ports table (дополнительные порты для сервера)
+export const serverPorts = pgTable("server_ports", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  serverId: varchar("server_id").notNull(),
+  port: integer("port").notNull(),
+  protocol: text("protocol").notNull().default("tcp"), // tcp, udp
+  name: text("name"), // название порта (например, "Rcon", "Query")
+  description: text("description"),
+  isPublic: boolean("is_public").notNull().default(false), // публичный или внутренний
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type ServerPort = typeof serverPorts.$inferSelect;
+export type InsertServerPort = typeof serverPorts.$inferInsert;
+
+// SFTP users table
+export const sftpUsers = pgTable("sftp_users", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  serverId: varchar("server_id").notNull(),
+  username: text("username").notNull(),
+  password: text("password").notNull(), // зашифрованный пароль
+  homeDirectory: text("home_directory").notNull().default("/data"), // домашняя директория
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdBy: varchar("created_by"), // ID пользователя, создавшего SFTP пользователя
+});
+
+export type SftpUser = typeof sftpUsers.$inferSelect;
+export type InsertSftpUser = typeof sftpUsers.$inferInsert;

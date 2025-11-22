@@ -4,7 +4,6 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { createServer as createViteServer, createLogger } from "vite";
 import { type Server } from "http";
-import viteConfig from "../vite.config";
 import { nanoid } from "nanoid";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -23,15 +22,12 @@ export function log(message: string, source = "express") {
 }
 
 export async function setupVite(app: Express, server: Server) {
-  const serverOptions = {
-    middlewareMode: true,
-    hmr: { server },
-    allowedHosts: true as const,
-  };
+  const viteConfigPath = path.resolve(__dirname, "..", "vite.config.ts");
+  const clientRoot = path.resolve(__dirname, "..", "client");
 
   const vite = await createViteServer({
-    ...viteConfig,
-    configFile: false,
+    configFile: viteConfigPath,
+    root: clientRoot,
     customLogger: {
       ...viteLogger,
       error: (msg, options) => {
@@ -39,8 +35,19 @@ export async function setupVite(app: Express, server: Server) {
         process.exit(1);
       },
     },
-    server: serverOptions,
+    server: {
+      middlewareMode: true,
+      hmr: { server },
+      allowedHosts: true as const,
+    },
     appType: "custom",
+    resolve: {
+      alias: {
+        "@": path.resolve(clientRoot, "src"),
+        "@shared": path.resolve(__dirname, "..", "shared"),
+        "@assets": path.resolve(__dirname, "..", "attached_assets"),
+      },
+    },
   });
 
   app.use(vite.middlewares);

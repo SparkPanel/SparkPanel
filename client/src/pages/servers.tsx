@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Server, Plus, Search, Trash2, Play, Square, RotateCw } from "lucide-react";
@@ -54,10 +54,10 @@ export default function ServersPage() {
         description: "Your game server has been created successfully",
       });
     },
-    onError: () => {
+    onError: (error: any) => {
       toast({
         title: "Error",
-        description: "Failed to create server",
+        description: error.message || "Failed to create server",
         variant: "destructive",
       });
     },
@@ -85,11 +85,14 @@ export default function ServersPage() {
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-            <CreateServerForm
-              nodes={nodes || []}
-              onSubmit={(data) => createMutation.mutate(data)}
-              isLoading={createMutation.isPending}
-            />
+            {dialogOpen && (
+              <CreateServerForm
+                nodes={nodes || []}
+                onSubmit={(data) => createMutation.mutate(data)}
+                isLoading={createMutation.isPending}
+                onSuccess={() => setDialogOpen(false)}
+              />
+            )}
           </DialogContent>
         </Dialog>
       </div>
@@ -282,10 +285,12 @@ function CreateServerForm({
   nodes,
   onSubmit,
   isLoading,
+  onSuccess,
 }: {
   nodes: Node[];
   onSubmit: (data: InsertServer) => void;
   isLoading: boolean;
+  onSuccess?: () => void;
 }) {
   const form = useForm<InsertServer>({
     resolver: zodResolver(insertServerSchema),
@@ -303,6 +308,34 @@ function CreateServerForm({
     },
   });
 
+  // Обновляем nodeId когда nodes загружаются
+  useEffect(() => {
+    if (nodes.length > 0 && !form.getValues("nodeId")) {
+      form.setValue("nodeId", nodes[0].id);
+    }
+  }, [nodes, form]);
+
+  const handleSubmit = async (data: InsertServer) => {
+    try {
+      await onSubmit(data);
+      form.reset({
+        name: "",
+        gameType: "minecraft",
+        nodeId: nodes[0]?.id || "",
+        status: "stopped",
+        cpuLimit: 50,
+        ramLimit: 2,
+        diskLimit: 10,
+        port: 25565,
+        autoStart: false,
+        config: {},
+      });
+      onSuccess?.();
+    } catch (error) {
+      // Ошибка обрабатывается в mutation
+    }
+  };
+
   return (
     <>
       <DialogHeader>
@@ -312,7 +345,7 @@ function CreateServerForm({
         </DialogDescription>
       </DialogHeader>
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+        <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
           <FormField
             control={form.control}
             name="name"
@@ -333,10 +366,10 @@ function CreateServerForm({
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Game Type</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <Select onValueChange={field.onChange} value={field.value}>
                   <FormControl>
                     <SelectTrigger data-testid="select-game-type">
-                      <SelectValue />
+                      <SelectValue placeholder="Select game type" />
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
@@ -364,10 +397,10 @@ function CreateServerForm({
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Node</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <Select onValueChange={field.onChange} value={field.value || ""}>
                   <FormControl>
                     <SelectTrigger data-testid="select-node">
-                      <SelectValue />
+                      <SelectValue placeholder="Select a node" />
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>

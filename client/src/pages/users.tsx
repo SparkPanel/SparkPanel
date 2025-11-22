@@ -23,6 +23,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import type { Server } from "@shared/schema";
+import { userRoles } from "@shared/schema";
 
 const createUserSchema = z.object({
   username: z.string().min(3, "Username must be at least 3 characters").max(50, "Username must be at most 50 characters"),
@@ -377,16 +378,18 @@ function CreateUserForm({
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Role</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <Select onValueChange={field.onChange} value={field.value}>
                   <FormControl>
                     <SelectTrigger>
-                      <SelectValue />
+                      <SelectValue placeholder="Select a role" />
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    <SelectItem value="operator">Operator</SelectItem>
-                    <SelectItem value="viewer">Viewer</SelectItem>
-                    <SelectItem value="admin">Administrator</SelectItem>
+                    {userRoles.map((role) => (
+                      <SelectItem key={role} value={role} className="capitalize">
+                        {role === "admin" ? "Administrator" : role === "operator" ? "Operator" : "Viewer"}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <FormDescription>
@@ -519,16 +522,18 @@ function EditUserForm({
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Role</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <Select onValueChange={field.onChange} value={field.value}>
                   <FormControl>
                     <SelectTrigger>
-                      <SelectValue />
+                      <SelectValue placeholder="Select a role" />
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    <SelectItem value="operator">Operator</SelectItem>
-                    <SelectItem value="viewer">Viewer</SelectItem>
-                    <SelectItem value="admin">Administrator</SelectItem>
+                    {userRoles.map((role) => (
+                      <SelectItem key={role} value={role} className="capitalize">
+                        {role === "admin" ? "Administrator" : role === "operator" ? "Operator" : "Viewer"}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <FormDescription>

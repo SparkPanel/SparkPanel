@@ -1,5 +1,6 @@
 import { Home, Server, HardDrive, Settings, LogOut, Activity, Package, Users } from "lucide-react";
 import { Link, useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import {
   Sidebar,
   SidebarContent,
@@ -63,6 +64,12 @@ interface AppSidebarProps {
 export function AppSidebar({ user, onLogout }: AppSidebarProps) {
   const [location] = useLocation();
 
+  const { data: panelSettings } = useQuery<{ panelName: string }>({
+    queryKey: ["/api/settings/panel"],
+  });
+
+  const panelName = panelSettings?.panelName || "SparkPanel";
+
   return (
     <Sidebar>
       <SidebarHeader className="p-4">
@@ -71,8 +78,8 @@ export function AppSidebar({ user, onLogout }: AppSidebarProps) {
             <Server className="w-6 h-6 text-primary-foreground" />
           </div>
           <div className="flex flex-col">
-            <span className="text-base font-semibold text-sidebar-foreground">SparkPanel</span>
-            <span className="text-xs text-muted-foreground">v1.0 • Server Management</span>
+            <span className="text-base font-semibold text-sidebar-foreground">{panelName}</span>
+            <span className="text-xs text-muted-foreground">SparkPanel v1.1 • Управление сервером</span>
           </div>
         </div>
       </SidebarHeader>

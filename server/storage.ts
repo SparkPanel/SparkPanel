@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type Server, type InsertServer, type Node, type InsertNode, type ServerStats, type NodeStats, type Activity, type UserPermission, type UserRole, userPermissions } from "@shared/schema";
+import { type User, type InsertUser, type Server, type InsertServer, type Node, type InsertNode, type ServerStats, type NodeStats, type Activity, type UserPermission, type UserRole, userPermissions, type Backup, type InsertBackup, type ServerPort, type InsertServerPort, type SftpUser, type InsertSftpUser } from "@shared/schema";
 import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 
@@ -37,6 +37,30 @@ export interface IStorage {
   // Activity log
   addActivity(activity: Omit<Activity, 'id'>): Promise<Activity>;
   getRecentActivities(limit?: number): Promise<Activity[]>;
+
+  // Backups
+  getBackupsByServer(serverId: string): Promise<Backup[]>;
+  getBackup(id: string): Promise<Backup | undefined>;
+  createBackup(backup: InsertBackup): Promise<Backup>;
+  deleteBackup(id: string): Promise<boolean>;
+
+  // Server Ports
+  getPortsByServer(serverId: string): Promise<ServerPort[]>;
+  getPort(id: string): Promise<ServerPort | undefined>;
+  createPort(port: InsertServerPort): Promise<ServerPort>;
+  deletePort(id: string): Promise<boolean>;
+  checkPortAvailable(port: number, excludeServerId?: string): Promise<boolean>;
+
+  // SFTP Users
+  getSftpUsersByServer(serverId: string): Promise<SftpUser[]>;
+  getSftpUser(id: string): Promise<SftpUser | undefined>;
+  createSftpUser(user: InsertSftpUser): Promise<SftpUser>;
+  updateSftpUser(id: string, updates: Partial<SftpUser>): Promise<SftpUser | undefined>;
+  deleteSftpUser(id: string): Promise<boolean>;
+
+  // Panel Settings
+  getPanelSettings(): Promise<{ panelName: string; primaryColor?: string; backgroundColor?: string; borderColor?: string; sidebarAccentColor?: string }>;
+  updatePanelSettings(settings: { panelName?: string; primaryColor?: string; backgroundColor?: string; borderColor?: string; sidebarAccentColor?: string }): Promise<{ panelName: string; primaryColor?: string; backgroundColor?: string; borderColor?: string; sidebarAccentColor?: string }>;
 }
 
 export class MemStorage implements IStorage {
@@ -46,6 +70,9 @@ export class MemStorage implements IStorage {
   private serverStats: Map<string, ServerStats>;
   private nodeStats: Map<string, NodeStats>;
   private activities: Activity[];
+  private backups: Map<string, Backup>;
+  private serverPorts: Map<string, ServerPort>;
+  private sftpUsers: Map<string, SftpUser>;
 
   constructor() {
     this.users = new Map();
@@ -54,6 +81,9 @@ export class MemStorage implements IStorage {
     this.serverStats = new Map();
     this.nodeStats = new Map();
     this.activities = [];
+    this.backups = new Map();
+    this.serverPorts = new Map();
+    this.sftpUsers = new Map();
 
     // Initialize default user (adplayer/0000) - вызываем синхронно
     this.initializeDefaultUser().catch((err) => {
@@ -198,6 +228,8 @@ export class MemStorage implements IStorage {
       containerId: null,
       autoStart: insertServer.autoStart ?? false,
       config: insertServer.config ?? {},
+      visibility: (insertServer.visibility as Server['visibility']) ?? {},
+      limits: (insertServer.limits as Server['limits']) ?? {},
       createdAt: new Date(),
     };
     this.servers.set(id, server);
@@ -217,6 +249,7 @@ export class MemStorage implements IStorage {
   async deleteServer(id: string): Promise<boolean> {
     const deleted = this.servers.delete(id);
     if (deleted) {
+      // Удаляем связанные данные
       for (const [userId, user] of this.users.entries()) {
         if (user.allowedServerIds && Array.isArray(user.allowedServerIds)) {
           const filtered = user.allowedServerIds.filter((serverId) => serverId !== id);
@@ -224,6 +257,21 @@ export class MemStorage implements IStorage {
             this.users.set(userId, { ...user, allowedServerIds: filtered });
           }
         }
+      }
+      // Удаляем бекапы
+      const backups = await this.getBackupsByServer(id);
+      for (const backup of backups) {
+        this.backups.delete(backup.id);
+      }
+      // Удаляем порты
+      const ports = await this.getPortsByServer(id);
+      for (const port of ports) {
+        this.serverPorts.delete(port.id);
+      }
+      // Удаляем SFTP пользователей
+      const sftpUsers = await this.getSftpUsersByServer(id);
+      for (const sftpUser of sftpUsers) {
+        this.sftpUsers.delete(sftpUser.id);
       }
     }
     return deleted;
@@ -314,6 +362,132 @@ export class MemStorage implements IStorage {
 
   async getRecentActivities(limit: number = 50): Promise<Activity[]> {
     return this.activities.slice(0, limit);
+  }
+
+  // Backups
+  async getBackupsByServer(serverId: string): Promise<Backup[]> {
+    return Array.from(this.backups.values()).filter(b => b.serverId === serverId);
+  }
+
+  async getBackup(id: string): Promise<Backup | undefined> {
+    return this.backups.get(id);
+  }
+
+  async createBackup(insertBackup: InsertBackup): Promise<Backup> {
+    const id = randomUUID();
+    const backup: Backup = {
+      ...insertBackup,
+      id,
+      size: insertBackup.size ?? 0,
+      description: insertBackup.description ?? null,
+      createdBy: insertBackup.createdBy ?? null,
+      createdAt: new Date(),
+    };
+    this.backups.set(id, backup);
+    return backup;
+  }
+
+  async deleteBackup(id: string): Promise<boolean> {
+    return this.backups.delete(id);
+  }
+
+  // Server Ports
+  async getPortsByServer(serverId: string): Promise<ServerPort[]> {
+    return Array.from(this.serverPorts.values()).filter(p => p.serverId === serverId);
+  }
+
+  async getPort(id: string): Promise<ServerPort | undefined> {
+    return this.serverPorts.get(id);
+  }
+
+  async createPort(insertPort: InsertServerPort): Promise<ServerPort> {
+    const id = randomUUID();
+    const port: ServerPort = {
+      ...insertPort,
+      id,
+      protocol: insertPort.protocol ?? "tcp",
+      name: insertPort.name ?? null,
+      description: insertPort.description ?? null,
+      isPublic: insertPort.isPublic ?? false,
+      createdAt: new Date(),
+    };
+    this.serverPorts.set(id, port);
+    return port;
+  }
+
+  async deletePort(id: string): Promise<boolean> {
+    return this.serverPorts.delete(id);
+  }
+
+  async checkPortAvailable(port: number, excludeServerId?: string): Promise<boolean> {
+    // Проверяем, не используется ли порт другим сервером или портом
+    const allServers = Array.from(this.servers.values());
+    const allPorts = Array.from(this.serverPorts.values());
+    
+    // Проверяем основной порт серверов
+    const serverUsingPort = allServers.find(s => s.port === port && s.id !== excludeServerId);
+    if (serverUsingPort) return false;
+    
+    // Проверяем дополнительные порты
+    const portInUse = allPorts.find(p => p.port === port && p.serverId !== excludeServerId);
+    if (portInUse) return false;
+    
+    return true;
+  }
+
+  // SFTP Users
+  async getSftpUsersByServer(serverId: string): Promise<SftpUser[]> {
+    return Array.from(this.sftpUsers.values()).filter(u => u.serverId === serverId);
+  }
+
+  async getSftpUser(id: string): Promise<SftpUser | undefined> {
+    return this.sftpUsers.get(id);
+  }
+
+  async createSftpUser(insertUser: InsertSftpUser): Promise<SftpUser> {
+    const id = randomUUID();
+    const user: SftpUser = {
+      ...insertUser,
+      id,
+      homeDirectory: insertUser.homeDirectory ?? "/data",
+      isActive: insertUser.isActive ?? true,
+      createdBy: insertUser.createdBy ?? null,
+      createdAt: new Date(),
+    };
+    this.sftpUsers.set(id, user);
+    return user;
+  }
+
+  async updateSftpUser(id: string, updates: Partial<SftpUser>): Promise<SftpUser | undefined> {
+    const user = this.sftpUsers.get(id);
+    if (user) {
+      const updated = { ...user, ...updates };
+      this.sftpUsers.set(id, updated);
+      return updated;
+    }
+    return undefined;
+  }
+
+  async deleteSftpUser(id: string): Promise<boolean> {
+    return this.sftpUsers.delete(id);
+  }
+
+  // Panel Settings
+  private panelSettings: { panelName: string; primaryColor?: string; backgroundColor?: string; borderColor?: string; sidebarAccentColor?: string } = {
+    panelName: "SparkPanel",
+    primaryColor: undefined, // По умолчанию используется тема
+    backgroundColor: undefined, // По умолчанию используется тема
+    borderColor: undefined, // По умолчанию используется тема
+    sidebarAccentColor: undefined, // По умолчанию используется тема
+  };
+
+  async getPanelSettings(): Promise<{ panelName: string; primaryColor?: string; backgroundColor?: string; borderColor?: string; sidebarAccentColor?: string }> {
+    return { ...this.panelSettings };
+  }
+
+  async updatePanelSettings(settings: { panelName?: string; primaryColor?: string; backgroundColor?: string; borderColor?: string; sidebarAccentColor?: string }): Promise<{ panelName: string; primaryColor?: string; backgroundColor?: string; borderColor?: string; sidebarAccentColor?: string }> {
+    this.panelSettings = { ...this.panelSettings, ...settings };
+    return { ...this.panelSettings };
   }
 }
 

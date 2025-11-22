@@ -415,7 +415,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     const settings = await storage.getPanelSettings();
     res.json({
       name: settings.panelName,
-      version: "1.0",
+      version: "1.1",
       description: "Game Server Management Platform",
     });
   });

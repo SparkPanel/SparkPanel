@@ -7,6 +7,7 @@ import bcrypt from "bcryptjs";
 import { dockerManager } from "./docker-manager";
 import { statsCollector } from "./stats-collector";
 import { logStreamer } from "./log-streamer";
+import { vdsTerminal } from "./vds-terminal";
 import {
   insertServerSchema,
   insertNodeSchema,
@@ -405,7 +406,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       res.json({ 
         user: serializeUser(user),
         csrfToken,
-        version: "1.1",
+        version: "1.2",
       });
     });
   });
@@ -415,7 +416,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     const settings = await storage.getPanelSettings();
     res.json({
       name: settings.panelName,
-      version: "1.1",
+      version: "1.2",
       description: "Game Server Management Platform",
     });
   });
@@ -1197,10 +1198,17 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
 
       // Ждем завершения команды
       await new Promise<void>((resolve) => {
-        stream.on("end", resolve);
-        stream.on("error", () => resolve()); // Игнорируем ошибки, чтобы не зависнуть
+        let timeoutId: NodeJS.Timeout | null = null;
+        stream.on("end", () => {
+          if (timeoutId) clearTimeout(timeoutId);
+          resolve();
+        });
+        stream.on("error", () => {
+          if (timeoutId) clearTimeout(timeoutId);
+          resolve(); // Игнорируем ошибки, чтобы не зависнуть
+        });
         // Таймаут на случай зависания команды
-        setTimeout(() => {
+        timeoutId = setTimeout(() => {
           resolve();
         }, 30000); // 30 секунд максимум
       });
@@ -1337,10 +1345,17 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
 
       // Ждем завершения команды
       await new Promise<void>((resolve) => {
-        stream.on("end", resolve);
-        stream.on("error", () => resolve()); // Игнорируем ошибки, чтобы не зависнуть
+        let timeoutId: NodeJS.Timeout | null = null;
+        stream.on("end", () => {
+          if (timeoutId) clearTimeout(timeoutId);
+          resolve();
+        });
+        stream.on("error", () => {
+          if (timeoutId) clearTimeout(timeoutId);
+          resolve(); // Игнорируем ошибки, чтобы не зависнуть
+        });
         // Таймаут на случай зависания команды
-        setTimeout(() => {
+        timeoutId = setTimeout(() => {
           resolve();
         }, 10000); // 10 секунд максимум
       });
@@ -1516,9 +1531,22 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       });
 
       await new Promise<void>((resolve) => {
-        stream.on("end", resolve);
-        stream.on("error", () => resolve());
-        setTimeout(() => resolve(), 30000); // 30 секунд максимум
+        let timeoutId: NodeJS.Timeout | null = null;
+        const cleanup = () => {
+          if (timeoutId) clearTimeout(timeoutId);
+        };
+        stream.on("end", () => {
+          cleanup();
+          resolve();
+        });
+        stream.on("error", () => {
+          cleanup();
+          resolve();
+        });
+        timeoutId = setTimeout(() => {
+          cleanup();
+          resolve();
+        }, 30000); // 30 секунд максимум
       });
 
       // Удаляем временный файл
@@ -1609,9 +1637,22 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       });
 
       await new Promise<void>((resolve) => {
-        stream.on("end", resolve);
-        stream.on("error", () => resolve());
-        setTimeout(() => resolve(), 5000);
+        let timeoutId: NodeJS.Timeout | null = null;
+        const cleanup = () => {
+          if (timeoutId) clearTimeout(timeoutId);
+        };
+        stream.on("end", () => {
+          cleanup();
+          resolve();
+        });
+        stream.on("error", () => {
+          cleanup();
+          resolve();
+        });
+        timeoutId = setTimeout(() => {
+          cleanup();
+          resolve();
+        }, 5000);
       });
 
       await storage.addActivity({
@@ -1687,9 +1728,10 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         const backupFileName = `backup-${Date.now()}.tar.gz`;
         const backupPath = `/tmp/${backupFileName}`;
 
-        // Создаем архив
+        // Создаем архив (путь уже безопасен, так как мы его создали)
+        const escapedBackupPath = backupPath.replace(/'/g, "'\\''");
         const exec = await container.exec({
-          Cmd: ["/bin/sh", "-c", `tar -czf ${backupPath} -C /data .`],
+          Cmd: ["/bin/sh", "-c", `tar -czf '${escapedBackupPath}' -C /data .`],
           AttachStdout: true,
           AttachStderr: true,
         });
@@ -1701,14 +1743,28 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         });
 
         await new Promise<void>((resolve, reject) => {
-          stream.on("end", resolve);
-          stream.on("error", reject);
-          setTimeout(() => reject(new Error("Backup timeout")), 300000); // 5 минут
+          let timeoutId: NodeJS.Timeout | null = null;
+          const cleanup = () => {
+            if (timeoutId) clearTimeout(timeoutId);
+          };
+          stream.on("end", () => {
+            cleanup();
+            resolve();
+          });
+          stream.on("error", (err) => {
+            cleanup();
+            reject(err);
+          });
+          timeoutId = setTimeout(() => {
+            cleanup();
+            reject(new Error("Backup timeout"));
+          }, 300000); // 5 минут
         });
 
-        // Получаем размер файла
+        // Получаем размер файла (путь уже безопасен, но экранируем для надежности)
+        const escapedBackupPathForSize = backupPath.replace(/'/g, "'\\''");
         const sizeExec = await container.exec({
-          Cmd: ["/bin/sh", "-c", `stat -c%s ${backupPath} 2>/dev/null || echo 0`],
+          Cmd: ["/bin/sh", "-c", `stat -c%s '${escapedBackupPathForSize}' 2>/dev/null || echo 0`],
           AttachStdout: true,
           AttachStderr: true,
         });
@@ -1720,9 +1776,22 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         });
 
         await new Promise<void>((resolve) => {
-          sizeStream.on("end", resolve);
-          sizeStream.on("error", () => resolve());
-          setTimeout(() => resolve(), 5000);
+          let timeoutId: NodeJS.Timeout | null = null;
+          const cleanup = () => {
+            if (timeoutId) clearTimeout(timeoutId);
+          };
+          sizeStream.on("end", () => {
+            cleanup();
+            resolve();
+          });
+          sizeStream.on("error", () => {
+            cleanup();
+            resolve();
+          });
+          timeoutId = setTimeout(() => {
+            cleanup();
+            resolve();
+          }, 5000);
         });
 
         const size = parseInt(sizeOutput.trim()) || 0;
@@ -1774,6 +1843,11 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           return res.status(404).json({ message: "Backup not found" });
         }
 
+        // Проверяем, что путь к бэкапу безопасен
+        if (!backup.path || !backup.path.startsWith("/tmp/") || !backup.path.endsWith(".tar.gz")) {
+          return res.status(400).json({ message: "Invalid backup path" });
+        }
+
         const node = await storage.getNode(server.nodeId);
         if (!node) {
           return res.status(404).json({ message: "Node not found" });
@@ -1781,9 +1855,12 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
 
         const container = await dockerManager.getContainer(node, server.containerId);
 
-        // Восстанавливаем из бекапа
+        // Восстанавливаем из бекапа (безопасно, так как путь проверен)
+        // Дополнительно экранируем путь для использования в shell команде
+        const sanitizedPath = backup.path.replace(/[^a-zA-Z0-9._/-]/g, "");
+        const escapedPath = sanitizedPath.replace(/'/g, "'\\''"); // Экранируем одинарные кавычки
         const exec = await container.exec({
-          Cmd: ["/bin/sh", "-c", `cd /data && rm -rf * && tar -xzf ${backup.path} -C /data`],
+          Cmd: ["/bin/sh", "-c", `cd /data && rm -rf * && tar -xzf '${escapedPath}' -C /data`],
           AttachStdout: true,
           AttachStderr: true,
         });
@@ -1795,9 +1872,22 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         });
 
         await new Promise<void>((resolve, reject) => {
-          stream.on("end", resolve);
-          stream.on("error", reject);
-          setTimeout(() => reject(new Error("Restore timeout")), 300000);
+          let timeoutId: NodeJS.Timeout | null = null;
+          const cleanup = () => {
+            if (timeoutId) clearTimeout(timeoutId);
+          };
+          stream.on("end", () => {
+            cleanup();
+            resolve();
+          });
+          stream.on("error", (err) => {
+            cleanup();
+            reject(err);
+          });
+          timeoutId = setTimeout(() => {
+            cleanup();
+            reject(new Error("Restore timeout"));
+          }, 300000);
         });
 
         await storage.addActivity({
@@ -1839,8 +1929,10 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           if (node) {
             try {
               const container = await dockerManager.getContainer(node, server.containerId);
+              // Экранируем путь для безопасного использования в shell
+              const escapedBackupPath = backup.path.replace(/'/g, "'\\''");
               const exec = await container.exec({
-                Cmd: ["/bin/sh", "-c", `rm -f ${backup.path}`],
+                Cmd: ["/bin/sh", "-c", `rm -f '${escapedBackupPath}'`],
                 AttachStdout: true,
                 AttachStderr: true,
               });
@@ -2502,12 +2594,25 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
             }));
           }
         }
+
+        // VDS Terminal handlers
+        if (data.type === "vds_terminal_connect") {
+          await vdsTerminal.connect(user.id, ws);
+        }
+
+        if (data.type === "vds_terminal_command" && data.command) {
+          await vdsTerminal.executeCommand(user.id, data.command, ws);
+        }
+
+        if (data.type === "vds_terminal_disconnect") {
+          vdsTerminal.disconnect(user.id, ws);
+        }
       } catch (error) {
         console.error("WebSocket message error:", error);
       }
     });
 
-    ws.on("close", () => {
+    ws.on("close", async () => {
       console.log("WebSocket client disconnected");
       // Очищаем подписки при отключении для предотвращения утечек памяти
       const subscribedServers = (ws as any).subscribedServers as Set<string>;
@@ -2517,6 +2622,13 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         });
         subscribedServers.clear();
       }
+      
+      // Отключаем VDS терминал при закрытии соединения
+      const user = await ensureUser();
+      if (user) {
+        vdsTerminal.disconnect(user.id, ws);
+      }
+      
       // Удаляем ссылки для помощи сборщику мусора
       delete (ws as any).subscribedServers;
     });
@@ -2536,7 +2648,8 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
 
   // Real-time stats updates from Docker
   // Используем setInterval с правильной очисткой для предотвращения утечек памяти
-  const statsInterval = setInterval(async () => {
+  let statsInterval: NodeJS.Timeout | null = null;
+  statsInterval = setInterval(async () => {
     try {
       // Обновляем статистику серверов из Docker
       await statsCollector.updateAllServerStats();
@@ -2573,7 +2686,10 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
 
   // Очистка интервала при закрытии сервера (предотвращение утечек памяти)
   httpServer.on("close", () => {
-    clearInterval(statsInterval);
+    if (statsInterval) {
+      clearInterval(statsInterval);
+      statsInterval = null;
+    }
   });
 
   return httpServer;
@@ -2688,7 +2804,9 @@ async function setupSftpUserInContainer(
 
     await installExec.start({ hijack: true, stdin: false });
     await new Promise<void>((resolve) => {
-      setTimeout(() => resolve(), 5000); // Даем время на установку
+      const timeoutId = setTimeout(() => resolve(), 5000); // Даем время на установку
+      // Таймаут будет очищен автоматически при resolve
+      // В данном случае это простой задержка, не критично для очистки
     });
 
     // Создаем пользователя и настраиваем его
@@ -2719,9 +2837,22 @@ async function setupSftpUserInContainer(
 
     const setupStream = await setupExec.start({ hijack: true, stdin: false });
     await new Promise<void>((resolve) => {
-      setupStream.on("end", resolve);
-      setupStream.on("error", () => resolve());
-      setTimeout(() => resolve(), 10000);
+      let timeoutId: NodeJS.Timeout | null = null;
+      const cleanup = () => {
+        if (timeoutId) clearTimeout(timeoutId);
+      };
+      setupStream.on("end", () => {
+        cleanup();
+        resolve();
+      });
+      setupStream.on("error", () => {
+        cleanup();
+        resolve();
+      });
+      timeoutId = setTimeout(() => {
+        cleanup();
+        resolve();
+      }, 10000);
     });
 
     // Настраиваем SSH для SFTP (добавляем конфигурацию если её нет)
@@ -2759,9 +2890,22 @@ async function setupSftpUserInContainer(
 
     const sshConfigStream = await sshConfigExec.start({ hijack: true, stdin: false });
     await new Promise<void>((resolve) => {
-      sshConfigStream.on("end", resolve);
-      sshConfigStream.on("error", () => resolve());
-      setTimeout(() => resolve(), 10000);
+      let timeoutId: NodeJS.Timeout | null = null;
+      const cleanup = () => {
+        if (timeoutId) clearTimeout(timeoutId);
+      };
+      sshConfigStream.on("end", () => {
+        cleanup();
+        resolve();
+      });
+      sshConfigStream.on("error", () => {
+        cleanup();
+        resolve();
+      });
+      timeoutId = setTimeout(() => {
+        cleanup();
+        resolve();
+      }, 10000);
     });
 
   } catch (error: any) {
@@ -2803,9 +2947,22 @@ async function removeSftpUserFromContainer(
 
     const removeStream = await removeExec.start({ hijack: true, stdin: false });
     await new Promise<void>((resolve) => {
-      removeStream.on("end", resolve);
-      removeStream.on("error", () => resolve());
-      setTimeout(() => resolve(), 5000);
+      let timeoutId: NodeJS.Timeout | null = null;
+      const cleanup = () => {
+        if (timeoutId) clearTimeout(timeoutId);
+      };
+      removeStream.on("end", () => {
+        cleanup();
+        resolve();
+      });
+      removeStream.on("error", () => {
+        cleanup();
+        resolve();
+      });
+      timeoutId = setTimeout(() => {
+        cleanup();
+        resolve();
+      }, 5000);
     });
 
   } catch (error: any) {

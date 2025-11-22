@@ -1,4 +1,4 @@
-import { Home, Server, HardDrive, Settings, LogOut, Activity, Package, Users } from "lucide-react";
+import { Home, Server, HardDrive, Settings, LogOut, Activity, Package, Users, Terminal } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -79,7 +79,7 @@ export function AppSidebar({ user, onLogout }: AppSidebarProps) {
           </div>
           <div className="flex flex-col">
             <span className="text-base font-semibold text-sidebar-foreground">{panelName}</span>
-            <span className="text-xs text-muted-foreground">SparkPanel v1.1 • Управление сервером</span>
+            <span className="text-xs text-muted-foreground">SparkPanel v1.2 • Управление сервером</span>
           </div>
         </div>
       </SidebarHeader>
@@ -116,6 +116,14 @@ export function AppSidebar({ user, onLogout }: AppSidebarProps) {
                     <Link href="/users" data-testid="link-users">
                       <Users className="w-4 h-4" />
                       <span>Users</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={location === "/kvm"}>
+                    <Link href="/kvm" data-testid="link-kvm">
+                      <Terminal className="w-4 h-4" />
+                      <span>KVM Console</span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>

@@ -33,11 +33,26 @@ export class LogStreamer {
         return;
       }
 
-      // В текущей реализации все пользователи могут смотреть логи всех серверов
-      // TODO: В будущем добавить проверку прав доступа
-      // if (server.ownerId && server.ownerId !== userId && !isAdmin(userId)) {
-      //   return;
-      // }
+      // Проверяем права доступа через storage (только если userId предоставлен)
+      if (userId) {
+        const user = await storage.getUser(userId);
+        if (!user) {
+          return;
+        }
+        
+        // Администраторы имеют доступ ко всем серверам
+        if (user.role === "admin") {
+          // Разрешаем доступ
+        } else if (user.allowedServerIds && user.allowedServerIds.length > 0) {
+          // Проверяем, есть ли у пользователя доступ к этому серверу
+          if (!user.allowedServerIds.includes(serverId)) {
+            return;
+          }
+        } else if (user.role !== "admin") {
+          // Если у пользователя нет явно разрешенных серверов и он не админ, запрещаем доступ
+          return;
+        }
+      }
 
       // Добавляем клиента в список подписчиков
       if (!this.subscribers.has(serverId)) {
@@ -156,11 +171,28 @@ export class LogStreamer {
         throw new Error("Server not found");
       }
 
-      // Проверяем права доступа
-      // TODO: В будущем добавить проверку ownerId или ролей
-      // if (server.ownerId && server.ownerId !== userId && !isAdmin(userId)) {
-      //   throw new Error("Access denied");
-      // }
+      // Проверяем права доступа через storage (только если userId предоставлен)
+      if (!userId) {
+        throw new Error("User ID is required");
+      }
+      
+      const user = await storage.getUser(userId);
+      if (!user) {
+        throw new Error("User not found");
+      }
+      
+      // Администраторы имеют доступ ко всем серверам
+      if (user.role === "admin") {
+        // Разрешаем доступ
+      } else if (user.allowedServerIds && user.allowedServerIds.length > 0) {
+        // Проверяем, есть ли у пользователя доступ к этому серверу
+        if (!user.allowedServerIds.includes(serverId)) {
+          throw new Error("Access denied");
+        }
+      } else if (user.role !== "admin") {
+        // Если у пользователя нет явно разрешенных серверов и он не админ, запрещаем доступ
+        throw new Error("Access denied");
+      }
 
       if (server.status !== "running") {
         throw new Error("Server is not running");

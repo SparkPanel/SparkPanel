@@ -196,6 +196,16 @@ export const activityTypes = [
 
 export type ActivityType = typeof activityTypes[number];
 
+// Activities table
+export const activities = pgTable("activities", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  type: text("type").notNull(),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+  userId: varchar("user_id"),
+});
+
 export interface Activity {
   id: string;
   type: ActivityType;

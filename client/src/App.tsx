@@ -16,6 +16,7 @@ import SettingsPage from "@/pages/settings";
 import ActivityPage from "@/pages/activity";
 import PluginsPage from "@/pages/plugins";
 import UsersPage from "@/pages/users";
+import KvmConsolePage from "@/pages/kvm-console";
 import NotFound from "@/pages/not-found";
 
 interface User {
@@ -34,6 +35,7 @@ function Router({ user, onLogout }: { user: User; onLogout: () => void }) {
       <Route path="/nodes" component={NodesPage} />
       <Route path="/activity" component={ActivityPage} />
       <Route path="/plugins" component={PluginsPage} />
+      {user.role === "admin" && <Route path="/kvm" component={KvmConsolePage} />}
       {user.role === "admin" && <Route path="/users" component={UsersPage} />}
       <Route path="/settings">
         {() => <SettingsPage username={user.username} />}

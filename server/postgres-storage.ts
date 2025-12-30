@@ -47,7 +47,7 @@ export class PostgresStorage implements IStorage {
     borderColor?: string;
     sidebarAccentColor?: string;
   } = {
-    panelName: "SparkPanel v1.3",
+    panelName: "SparkPanel v1.3.1",
     sidebarAccentColor: "#e5e7eb",
   };
 
@@ -112,18 +112,18 @@ export class PostgresStorage implements IStorage {
         // Create default settings if not exist
         await this.db.insert(panelSettings).values({
           id: "main",
-          panelName: "SparkPanel v1.3",
+          panelName: "SparkPanel v1.3.1",
           sidebarAccentColor: "#e5e7eb",
         });
         this.panelSettings = {
-          panelName: "SparkPanel v1.3",
+          panelName: "SparkPanel v1.3.1",
           sidebarAccentColor: "#e5e7eb",
         };
       }
     } catch (error) {
       console.error("Error loading panel settings:", error);
       this.panelSettings = {
-        panelName: "SparkPanel v1.3",
+        panelName: "SparkPanel v1.3.1",
       };
     }
   }

@@ -470,7 +470,7 @@ export type InsertDdosSettings = typeof ddosSettings.$inferInsert;
 // Panel Settings table
 export const panelSettings = pgTable("panel_settings", {
   id: varchar("id").primaryKey().default("main"),
-  panelName: text("panel_name").notNull().default("SparkPanel v1.3"),
+  panelName: text("panel_name").notNull().default("SparkPanel v1.3.1"),
   primaryColor: text("primary_color"),
   backgroundColor: text("background_color"),
   borderColor: text("border_color"),

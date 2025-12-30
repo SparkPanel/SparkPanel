@@ -100,7 +100,7 @@ export function AppSidebar({ user, onLogout }: AppSidebarProps) {
           />
           <div className="flex flex-col">
             <span className="text-base font-semibold text-sidebar-foreground">{panelName}</span>
-            <span className="text-xs text-muted-foreground">SparkPanel v1.3 • Управление сервером</span>
+            <span className="text-xs text-muted-foreground">SparkPanel v1.3.1 • Управление сервером</span>
           </div>
         </div>
       </SidebarHeader>

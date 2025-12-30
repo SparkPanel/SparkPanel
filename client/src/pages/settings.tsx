@@ -437,7 +437,7 @@ export default function SettingsPage({ username }: SettingsPageProps) {
           <div className="flex items-center justify-between py-3">
             <div>
               <p className="text-sm font-medium">Panel Version</p>
-              <p className="text-sm text-muted-foreground mt-1">1.3</p>
+              <p className="text-sm text-muted-foreground mt-1">1.3.1</p>
             </div>
           </div>
         </CardContent>

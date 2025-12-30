@@ -44,6 +44,7 @@ import { generateCSRFToken, verifyCSRFToken, removeCSRFToken, refreshCSRFToken }
 import { logSecurityEvent, isSuspiciousCommand, isSuspiciousPath, isDangerousFileExtension } from "./security-logger";
 import { pluginManager } from "./plugins/plugin-manager";
 import { telegramService } from "./telegram-service";
+import { ddosProtection } from "./ddos-protection";
 import multer from "multer";
 import { join } from "path";
 import { existsSync, mkdirSync, createWriteStream } from "fs";
@@ -96,6 +97,21 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
   });
   
   app.use(sessionMiddleware);
+
+  // Применяем DDoS защиту ко всем запросам (кроме статических файлов и API для настроек DDoS)
+  app.use((req, res, next) => {
+    // Пропускаем статические файлы и API для управления DDoS настройками
+    if (
+      req.path.startsWith("/assets/") ||
+      req.path.startsWith("/api/ddos-settings") ||
+      req.path === "/favicon.ico"
+    ) {
+      return next();
+    }
+    
+    // Применяем DDoS защиту
+    ddosProtection.applyProtection(req, res, next);
+  });
 
   const ALL_PERMISSIONS: UserPermission[] = [...userPermissions];
 
@@ -1713,7 +1729,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         await logSecurityEvent({
           type: "path_traversal",
           ip: req.ip || req.socket.remoteAddress || "unknown",
-          userId: req.currentUser?.id,
+        userId: req.currentUser?.id,
           details: `Attempted path traversal: ${req.query.path}`,
           timestamp: new Date(),
         });
@@ -1726,7 +1742,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         await logSecurityEvent({
           type: "path_traversal",
           ip: req.ip || req.socket.remoteAddress || "unknown",
-          userId: req.currentUser?.id,
+        userId: req.currentUser?.id,
           details: `Attempted to access suspicious path: ${filePath}`,
           timestamp: new Date(),
         });

@@ -191,9 +191,50 @@ SparkPanel is a professional game server management platform for Docker-based se
 
 ## Installation from GitHub
 
-### 0. Check Prerequisites
+### 0. Install Prerequisites on Ubuntu
 
-Before starting, verify you have the required software:
+First, update your system and install required dependencies:
+
+```bash
+# Update package list
+sudo apt update
+
+# Install build essentials (required for native modules)
+sudo apt install -y build-essential curl git
+
+# Install Node.js 18.x (using NodeSource repository)
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt install -y nodejs
+
+# Verify Node.js and NPM installation
+node --version  # Should be 18.x or higher
+npm --version   # Should be 8.x or higher
+
+# Install Docker
+sudo apt install -y ca-certificates gnupg lsb-release
+sudo mkdir -p /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+# Start and enable Docker service
+sudo systemctl start docker
+sudo systemctl enable docker
+
+# Verify Docker installation
+docker --version  # Should be 20.10 or higher
+sudo systemctl status docker
+
+# (Optional) Install PostgreSQL if you want to use database instead of in-memory storage
+sudo apt install -y postgresql postgresql-contrib
+sudo systemctl start postgresql
+sudo systemctl enable postgresql
+```
+
+### 1. Check Prerequisites
+
+Verify all required software is installed:
 
 ```bash
 # Check Node.js version (should be 18 or higher)
@@ -209,20 +250,20 @@ docker --version
 sudo systemctl status docker
 ```
 
-### 1. Clone the Repository
+### 2. Clone the Repository
 
 ```bash
-git clone https://github.com/sparkpanel/sparkpanel.git
-cd sparkpanel
+git clone https://github.com/SparkPanel/SparkPanel.git
+cd SparkPanel
 ```
 
-### 2. Install Dependencies
+### 3. Install Dependencies
 
 ```bash
 npm install
 ```
 
-### 3. Configure Environment Variables
+### 4. Configure Environment Variables
 
 Create a `.env` file in the root directory:
 
@@ -255,7 +296,7 @@ To generate a secure session secret:
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-### 4. Build the Application
+### 5. Build the Application
 
 ```bash
 npm run build
@@ -266,7 +307,7 @@ This will:
 - Bundle the backend (Express + TypeScript)
 - Output to `dist/` directory
 
-### 5. Configure Docker Access
+### 6. Configure Docker Access
 
 Ensure the user running SparkPanel has access to Docker:
 
@@ -281,7 +322,7 @@ newgrp docker
 docker ps
 ```
 
-### 6. Start the Application
+### 7. Start the Application
 
 For production:
 
@@ -296,7 +337,7 @@ The panel will be available at `http://your-server-ip:5000`
 - User has Docker access: `docker ps` (should work without sudo)
 - Port 5000 is not in use: `sudo lsof -i :5000` or `sudo netstat -tlnp | grep 5000`
 
-### 7. Default Credentials
+### 8. Default Credentials
 
 - **Username**: `adplayer`
 - **Password**: `0000`

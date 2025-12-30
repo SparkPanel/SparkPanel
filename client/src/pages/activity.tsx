@@ -249,12 +249,12 @@ export default function ActivityPage() {
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex items-center justify-center w-10 h-10 rounded-md bg-primary/10">
-                <Activity className="w-5 h-5 text-primary" />
-              </div>
-              <div>
-                <CardTitle>Recent Activity</CardTitle>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center justify-center w-10 h-10 rounded-md bg-primary/10">
+              <Activity className="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <CardTitle>Recent Activity</CardTitle>
                 <CardDescription>
                   {filteredActivities.length} of {activities.length} activities
                   {hasActiveFilters && " (filtered)"}
@@ -289,45 +289,45 @@ export default function ActivityPage() {
             <ScrollArea className="h-[600px]">
               <div className="space-y-4 pr-4">
                 {filteredActivities.map((activity, index) => {
-                  const Icon = iconMap[activity.type] || Activity;
-                  return (
-                    <div key={activity.id} className="flex gap-4">
-                      <div className="relative">
-                        <div className="flex items-center justify-center w-10 h-10 rounded-md bg-muted">
-                          <Icon className="w-4 h-4 text-muted-foreground" />
-                        </div>
-                        {index < filteredActivities.length - 1 && (
-                          <div className="absolute left-1/2 top-10 w-px h-full -translate-x-1/2 bg-border" />
-                        )}
+                const Icon = iconMap[activity.type] || Activity;
+                return (
+                  <div key={activity.id} className="flex gap-4">
+                    <div className="relative">
+                      <div className="flex items-center justify-center w-10 h-10 rounded-md bg-muted">
+                        <Icon className="w-4 h-4 text-muted-foreground" />
                       </div>
-                      <div className="flex-1 pb-4">
-                        <div className="flex items-center justify-between mb-1">
+                        {index < filteredActivities.length - 1 && (
+                        <div className="absolute left-1/2 top-10 w-px h-full -translate-x-1/2 bg-border" />
+                      )}
+                    </div>
+                    <div className="flex-1 pb-4">
+                      <div className="flex items-center justify-between mb-1">
                           <div className="flex items-center gap-2">
-                            <h3 className="text-sm font-medium">{activity.title}</h3>
+                        <h3 className="text-sm font-medium">{activity.title}</h3>
                             <Badge variant="outline" className="text-xs">
                               {activity.type.replace(/_/g, " ")}
                             </Badge>
                           </div>
+                        <span className="text-xs text-muted-foreground">
+                          {formatTimeAgo(new Date(activity.timestamp))}
+                        </span>
+                      </div>
+                      <p className="text-sm text-muted-foreground mb-2">
+                        {activity.description}
+                      </p>
+                      {activity.performedBy && (
+                        <div className="flex items-center gap-2">
+                          <User className="w-3 h-3 text-muted-foreground" />
                           <span className="text-xs text-muted-foreground">
-                            {formatTimeAgo(new Date(activity.timestamp))}
+                            Performed by: <span className="font-medium">{activity.performedBy}</span>
                           </span>
                         </div>
-                        <p className="text-sm text-muted-foreground mb-2">
-                          {activity.description}
-                        </p>
-                        {activity.performedBy && (
-                          <div className="flex items-center gap-2">
-                            <User className="w-3 h-3 text-muted-foreground" />
-                            <span className="text-xs text-muted-foreground">
-                              Performed by: <span className="font-medium">{activity.performedBy}</span>
-                            </span>
-                          </div>
-                        )}
-                      </div>
+                      )}
                     </div>
-                  );
-                })}
-              </div>
+                  </div>
+                );
+              })}
+            </div>
             </ScrollArea>
           )}
         </CardContent>

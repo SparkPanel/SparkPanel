@@ -335,6 +335,18 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         return res.status(401).json({ message: "Invalid credentials" });
       }
 
+      // Вызываем хук плагинов для события входа пользователя (до 2FA проверки)
+      try {
+        await pluginManager.callHook("user_login_attempt", user.id, {
+          userId: user.id,
+          username: user.username,
+          ip: clientIp,
+          success: true,
+        });
+      } catch (error) {
+        console.error("Error calling user_login_attempt hook:", error);
+      }
+
       // Проверяем, включена ли 2FA
       if (user.twoFactorEnabled && user.telegramBotToken && user.telegramChatId) {
         // Генерируем 6-значный код
@@ -508,6 +520,17 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
   });
 
   app.post("/api/auth/logout", requireAuth, (req, res) => {
+    const user = req.currentUser!;
+    
+    // Вызываем хук плагинов для события выхода пользователя (до удаления сессии)
+    pluginManager.callHook("user_logout", user.id, {
+      userId: user.id,
+      username: user.username,
+      timestamp: new Date(),
+    }).catch((error) => {
+      console.error("Error calling user_logout hook:", error);
+    });
+    
     // Удаляем CSRF токен при выходе
     removeCSRFToken(req.sessionID);
     
@@ -542,7 +565,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       res.json({ 
         user: serializeUser(user),
         csrfToken,
-        version: "1.3",
+        version: "1.3.1",
       });
     });
   });
@@ -552,7 +575,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     const settings = await storage.getPanelSettings();
     res.json({
       name: settings.panelName,
-      version: "1.3",
+      version: "1.3.1",
       description: "Game Server Management Platform",
     });
   });
@@ -673,6 +696,18 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         allowedServerIds,
       });
 
+      // Вызываем хук плагинов для события создания пользователя
+      try {
+        await pluginManager.callHook("user_create", user.id, {
+          userId: user.id,
+          username: user.username,
+          permissions: user.permissions,
+          createdBy: req.currentUser?.id,
+        });
+      } catch (error) {
+        console.error("Error calling user_create hook:", error);
+      }
+
       await storage.addActivity({
         type: "user_create",
         title: "User Created",
@@ -760,6 +795,18 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       const updatedUser = await storage.updateUser(user.id, updates);
       if (!updatedUser) {
         return res.status(404).json({ message: "User not found" });
+      }
+
+      // Вызываем хук плагинов для события обновления пользователя
+      try {
+        await pluginManager.callHook("user_update", user.id, {
+          userId: user.id,
+          username: user.username,
+          updates: data,
+          updatedBy: req.currentUser?.id,
+        });
+      } catch (error) {
+        console.error("Error calling user_update hook:", error);
       }
 
       await storage.addActivity({
@@ -1024,6 +1071,19 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       // Загружаем плагин в менеджер
       await pluginManager.loadPlugin(pluginId);
 
+      // Вызываем хук плагинов для события загрузки плагина
+      try {
+        await pluginManager.callHook("plugin_upload", pluginId, {
+          pluginId: pluginId,
+          pluginName: manifest.name,
+          pluginVersion: manifest.version,
+          pluginType: manifest.type,
+          uploadedBy: req.currentUser?.id,
+        });
+      } catch (error) {
+        console.error("Error calling plugin_upload hook:", error);
+      }
+
       res.json({ message: "Plugin uploaded successfully", plugin: manifest });
     } catch (error: any) {
       console.error("Failed to upload plugin:", error);
@@ -1034,7 +1094,20 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
   // Включить плагин
   app.post("/api/plugins/:id/enable", requireAuth, requirePermission("plugins.manage"), requireCSRF, async (req, res) => {
     try {
+      const plugin = pluginManager.getPlugin(req.params.id);
       await pluginManager.enablePlugin(req.params.id);
+      
+      // Вызываем хук плагинов для события включения плагина
+      try {
+        await pluginManager.callHook("plugin_enable", req.params.id, {
+          pluginId: req.params.id,
+          pluginName: plugin?.name,
+          enabledBy: req.currentUser?.id,
+        });
+      } catch (error) {
+        console.error("Error calling plugin_enable hook:", error);
+      }
+      
       res.json({ message: "Plugin enabled" });
     } catch (error: any) {
       console.error("Failed to enable plugin:", error);
@@ -1045,7 +1118,20 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
   // Отключить плагин
   app.post("/api/plugins/:id/disable", requireAuth, requirePermission("plugins.manage"), requireCSRF, async (req, res) => {
     try {
+      const plugin = pluginManager.getPlugin(req.params.id);
       await pluginManager.disablePlugin(req.params.id);
+      
+      // Вызываем хук плагинов для события отключения плагина
+      try {
+        await pluginManager.callHook("plugin_disable", req.params.id, {
+          pluginId: req.params.id,
+          pluginName: plugin?.name,
+          disabledBy: req.currentUser?.id,
+        });
+      } catch (error) {
+        console.error("Error calling plugin_disable hook:", error);
+      }
+      
       res.json({ message: "Plugin disabled" });
     } catch (error: any) {
       console.error("Failed to disable plugin:", error);
@@ -1056,6 +1142,19 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
   // Удалить плагин
   app.delete("/api/plugins/:id", requireAuth, requirePermission("plugins.manage"), requireCSRF, async (req, res) => {
     try {
+      const plugin = pluginManager.getPlugin(req.params.id);
+      
+      // Вызываем хук плагинов для события удаления плагина (до удаления)
+      try {
+        await pluginManager.callHook("plugin_delete", req.params.id, {
+          pluginId: req.params.id,
+          pluginName: plugin?.name,
+          deletedBy: req.currentUser?.id,
+        });
+      } catch (error) {
+        console.error("Error calling plugin_delete hook:", error);
+      }
+      
       await pluginManager.deletePlugin(req.params.id);
       res.json({ message: "Plugin deleted" });
     } catch (error: any) {
@@ -1075,6 +1174,17 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
 
       const newPasswordHash = await bcrypt.hash(data.newPassword, 10);
       await storage.updateUserPassword(user.id, newPasswordHash);
+
+      // Вызываем хук плагинов для события изменения пароля
+      try {
+        await pluginManager.callHook("password_change", user.id, {
+          userId: user.id,
+          username: user.username,
+          timestamp: new Date(),
+        });
+      } catch (error) {
+        console.error("Error calling password_change hook:", error);
+      }
 
       await storage.addActivity({
         type: "password_change",
@@ -1201,6 +1311,18 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       updateData.twoFactorEnabled = true;
       
       const updatedUser = await storage.updateUser(user.id, updateData);
+
+      // Вызываем хук плагинов для события включения 2FA
+      try {
+        await pluginManager.callHook("2fa_enable", user.id, {
+          userId: user.id,
+          username: user.username,
+          method: "telegram",
+          timestamp: new Date(),
+        });
+      } catch (error) {
+        console.error("Error calling 2fa_enable hook:", error);
+      }
 
       await storage.addActivity({
         type: "2fa_enable",
@@ -1339,6 +1461,17 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
 
       if (!updatedUser) {
         return res.status(404).json({ message: "User not found" });
+      }
+
+      // Вызываем хук плагинов для события отключения 2FA
+      try {
+        await pluginManager.callHook("2fa_disable", user.id, {
+          userId: user.id,
+          username: user.username,
+          timestamp: new Date(),
+        });
+      } catch (error) {
+        console.error("Error calling 2fa_disable hook:", error);
       }
 
       await storage.addActivity({
@@ -2100,6 +2233,20 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       // Удаляем временный файл
       await unlinkPromise(req.file.path);
 
+      // Вызываем хук плагинов для события загрузки файла
+      try {
+        await pluginManager.callHook("file_upload", server.id, {
+          serverId: server.id,
+          serverName: server.name,
+          filePath: targetPath,
+          fileName: basename(targetPath),
+          fileSize: req.file.size,
+          uploadedBy: req.currentUser?.id,
+        });
+      } catch (error) {
+        console.error("Error calling file_upload hook:", error);
+      }
+
       await storage.addActivity({
         type: "server_command",
         title: "File Uploaded",
@@ -2353,6 +2500,20 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           createdBy: req.currentUser?.id,
         });
 
+        // Вызываем хук плагинов для события создания бэкапа
+        try {
+          await pluginManager.callHook("backup_create", server.id, {
+            backupId: backup.id,
+            serverId: server.id,
+            serverName: server.name,
+            backupName: backup.name,
+            backupSize: backup.size,
+            createdBy: req.currentUser?.id,
+          });
+        } catch (error) {
+          console.error("Error calling backup_create hook:", error);
+        }
+
         await storage.addActivity({
           type: "backup_create",
           title: "Backup Created",
@@ -2438,6 +2599,19 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           }, 300000);
         });
 
+        // Вызываем хук плагинов для события восстановления бэкапа
+        try {
+          await pluginManager.callHook("backup_restore", server.id, {
+            backupId: backup.id,
+            serverId: server.id,
+            serverName: server.name,
+            backupName: backup.name,
+            restoredBy: req.currentUser?.id,
+          });
+        } catch (error) {
+          console.error("Error calling backup_restore hook:", error);
+        }
+
         await storage.addActivity({
           type: "backup_restore",
           title: "Backup Restored",
@@ -2488,6 +2662,21 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
             } catch (error) {
               // Игнорируем ошибки удаления файла
             }
+          }
+        }
+
+        // Вызываем хук плагинов для события удаления бэкапа (до удаления)
+        if (server) {
+          try {
+            await pluginManager.callHook("backup_delete", server.id, {
+              backupId: backup.id,
+              serverId: server.id,
+              serverName: server.name,
+              backupName: backup.name,
+              deletedBy: req.currentUser?.id,
+            });
+          } catch (error) {
+            console.error("Error calling backup_delete hook:", error);
           }
         }
 
@@ -2604,6 +2793,23 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         }
 
         const server = await storage.getServer(req.params.id);
+        
+        // Вызываем хук плагинов для события удаления порта (до удаления)
+        if (server) {
+          try {
+            await pluginManager.callHook("port_delete", server.id, {
+              portId: port.id,
+              serverId: server.id,
+              serverName: server.name,
+              port: port.port,
+              protocol: port.protocol,
+              deletedBy: req.currentUser?.id,
+            });
+          } catch (error) {
+            console.error("Error calling port_delete hook:", error);
+          }
+        }
+        
         await storage.deletePort(req.params.portId);
 
         await storage.addActivity({
@@ -2708,6 +2914,22 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           }
         }
 
+        // Вызываем хук плагинов для события создания SFTP пользователя
+        if (server) {
+          try {
+            await pluginManager.callHook("sftp_user_create", server.id, {
+              sftpUserId: sftpUser.id,
+              serverId: server.id,
+              serverName: server.name,
+              username: sftpUser.username,
+              homeDirectory: sftpUser.homeDirectory,
+              createdBy: req.currentUser?.id,
+            });
+          } catch (error) {
+            console.error("Error calling sftp_user_create hook:", error);
+          }
+        }
+
         await storage.addActivity({
           type: "sftp_user_create",
           title: "SFTP User Created",
@@ -2754,6 +2976,21 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           } catch (error: any) {
             console.error("Failed to remove SFTP user from container:", error);
             // Продолжаем удаление из базы данных даже если не удалось удалить из контейнера
+          }
+        }
+
+        // Вызываем хук плагинов для события удаления SFTP пользователя (до удаления)
+        if (server) {
+          try {
+            await pluginManager.callHook("sftp_user_delete", server.id, {
+              sftpUserId: sftpUser.id,
+              serverId: server.id,
+              serverName: server.name,
+              username: sftpUser.username,
+              deletedBy: req.currentUser?.id,
+            });
+          } catch (error) {
+            console.error("Error calling sftp_user_delete hook:", error);
           }
         }
 
@@ -2818,6 +3055,18 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         createdBy: req.currentUser!.id,
       });
       
+      // Вызываем хук плагинов для события создания API ключа
+      try {
+        await pluginManager.callHook("api_key_create", apiKey.id, {
+          apiKeyId: apiKey.id,
+          apiKeyName: apiKey.name,
+          permissions: apiKey.permissions,
+          createdBy: req.currentUser?.id,
+        });
+      } catch (error) {
+        console.error("Error calling api_key_create hook:", error);
+      }
+      
       await storage.addActivity({
         type: "security_event",
         title: "API Key Created",
@@ -2876,6 +3125,17 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       const apiKey = await storage.getApiKey(req.params.id);
       if (!apiKey) {
         return res.status(404).json({ message: "API key not found" });
+      }
+      
+      // Вызываем хук плагинов для события удаления API ключа (до удаления)
+      try {
+        await pluginManager.callHook("api_key_delete", apiKey.id, {
+          apiKeyId: apiKey.id,
+          apiKeyName: apiKey.name,
+          deletedBy: req.currentUser?.id,
+        });
+      } catch (error) {
+        console.error("Error calling api_key_delete hook:", error);
       }
       
       await storage.deleteApiKey(req.params.id);
@@ -3074,6 +3334,20 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         await storage.updateNode(node.id, { status: "offline" });
       }
       
+      // Вызываем хук плагинов для события создания ноды
+      try {
+        await pluginManager.callHook("node_create", node.id, {
+          nodeId: node.id,
+          nodeName: node.name,
+          ip: node.ip,
+          port: node.port,
+          location: node.location,
+          createdBy: req.currentUser?.id,
+        });
+      } catch (error) {
+        console.error("Error calling node_create hook:", error);
+      }
+      
       await storage.addActivity({
         type: "node_add",
         title: "Node Added",
@@ -3104,6 +3378,19 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     
     // Удаляем подключение к Docker
     if (node) {
+      // Вызываем хук плагинов для события удаления ноды (до удаления)
+      try {
+        await pluginManager.callHook("node_delete", node.id, {
+          nodeId: node.id,
+          nodeName: node.name,
+          ip: node.ip,
+          port: node.port,
+          deletedBy: req.currentUser?.id,
+        });
+      } catch (error) {
+        console.error("Error calling node_delete hook:", error);
+      }
+      
       dockerManager.removeConnection(node.id);
       
       await storage.addActivity({

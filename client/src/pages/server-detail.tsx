@@ -565,7 +565,7 @@ function FilesTab({ serverId }: { serverId: string }) {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
         <div className="flex items-center gap-2 flex-1">
-          <CardTitle>File Manager</CardTitle>
+        <CardTitle>File Manager</CardTitle>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             {currentPath !== "/data" && (
               <Button variant="ghost" size="sm" onClick={navigateUp}>
@@ -701,8 +701,8 @@ function FilesTab({ serverId }: { serverId: string }) {
                         <span>{file.type === "directory" ? "Folder" : formatFileSize(file.size)}</span>
                         <span>•</span>
                         <span>{formatDate(file.modified)}</span>
-                      </div>
                     </div>
+                  </div>
                   </div>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     {file.type === "file" && (
@@ -811,57 +811,57 @@ function StatsTab({ server, stats }: { server: Server; stats?: ServerStats }) {
           </Button>
         )}
       </div>
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Resource Usage</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {stats ? (
-              <>
-                <ResourceMeter
-                  label="CPU Usage"
-                  value={stats.cpuUsage}
-                  max={server.cpuLimit}
-                  unit="%"
-                />
-                <ResourceMeter
-                  label="Memory Usage"
+    <div className="grid gap-4 md:grid-cols-2">
+      <Card>
+        <CardHeader>
+          <CardTitle>Resource Usage</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {stats ? (
+            <>
+              <ResourceMeter
+                label="CPU Usage"
+                value={stats.cpuUsage}
+                max={server.cpuLimit}
+                unit="%"
+              />
+              <ResourceMeter
+                label="Memory Usage"
                   value={stats.ramUsage / 1024 / 1024 / 1024}
-                  max={server.ramLimit}
-                  unit="GB"
-                />
-                <ResourceMeter
-                  label="Disk Usage"
-                  value={stats.diskUsage}
-                  max={server.diskLimit}
-                  unit="GB"
-                />
-              </>
-            ) : (
+                max={server.ramLimit}
+                unit="GB"
+              />
+              <ResourceMeter
+                label="Disk Usage"
+                value={stats.diskUsage}
+                max={server.diskLimit}
+                unit="GB"
+              />
+            </>
+          ) : (
               <div className="text-muted-foreground text-sm text-center py-8">
                 <BarChart3 className="w-12 h-12 mx-auto mb-2 opacity-50" />
                 <p>Start the server to see resource usage</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Network Statistics</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {stats ? (
-              <>
+      <Card>
+        <CardHeader>
+          <CardTitle>Network Statistics</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {stats ? (
+            <>
                 <div className="space-y-3">
                   <div className="flex justify-between items-center p-3 bg-muted/50 rounded-md">
                     <div>
                       <div className="text-sm text-muted-foreground">Network RX</div>
                       <div className="text-lg font-semibold">{formatBytes(stats.networkRx)}</div>
-                    </div>
+              </div>
                     <Download className="w-5 h-5 text-green-500" />
-                  </div>
+              </div>
                   <div className="flex justify-between items-center p-3 bg-muted/50 rounded-md">
                     <div>
                       <div className="text-sm text-muted-foreground">Network TX</div>
@@ -876,16 +876,16 @@ function StatsTab({ server, stats }: { server: Server; stats?: ServerStats }) {
                     </div>
                     <Clock className="w-5 h-5 text-muted-foreground" />
                   </div>
-                </div>
-              </>
-            ) : (
+              </div>
+            </>
+          ) : (
               <div className="text-muted-foreground text-sm text-center py-8">
                 <Network className="w-12 h-12 mx-auto mb-2 opacity-50" />
                 <p>Start the server to see network statistics</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+            </div>
+          )}
+        </CardContent>
+      </Card>
       </div>
     </div>
   );
@@ -1070,25 +1070,25 @@ function SettingsTab({ server }: { server: Server }) {
 
         <div className="space-y-4 pt-4 border-t">
           <h4 className="font-semibold">System Information</h4>
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div>
+        <div className="grid grid-cols-2 gap-4 text-sm">
+          <div>
               <Label className="text-muted-foreground">Server ID</Label>
               <p className="font-mono mt-1 text-xs">{server.id}</p>
-            </div>
-            <div>
+          </div>
+          <div>
               <Label className="text-muted-foreground">Container ID</Label>
               <p className="font-mono mt-1 text-xs">{server.containerId || "Not created"}</p>
-            </div>
-            <div>
+          </div>
+          <div>
               <Label className="text-muted-foreground">Status</Label>
               <div className="mt-1">
                 <StatusBadge status={server.status as any} />
-              </div>
-            </div>
-            <div>
+          </div>
+          </div>
+          <div>
               <Label className="text-muted-foreground">Created</Label>
               <p className="font-medium mt-1">{new Date(server.createdAt).toLocaleString()}</p>
-            </div>
+          </div>
           </div>
         </div>
       </CardContent>
@@ -1211,7 +1211,7 @@ function BackupsTab({ serverId, server }: { serverId: string; server: Server }) 
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
         <div className="flex items-center gap-3">
-          <CardTitle>Backups</CardTitle>
+        <CardTitle>Backups</CardTitle>
           {maxBackups !== undefined && (
             <span className="text-sm text-muted-foreground">
               {backups.length} / {maxBackups}
@@ -1430,7 +1430,7 @@ function PortsTab({ serverId, server }: { serverId: string; server: Server }) {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
         <div className="flex items-center gap-3">
-          <CardTitle>Ports</CardTitle>
+        <CardTitle>Ports</CardTitle>
           {maxPorts !== undefined && (
             <span className="text-sm text-muted-foreground">
               {ports.length} / {maxPorts}
@@ -1673,7 +1673,7 @@ function SftpTab({ serverId, server }: { serverId: string; server: Server }) {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
         <div className="flex items-center gap-3">
-          <CardTitle>SFTP Users</CardTitle>
+        <CardTitle>SFTP Users</CardTitle>
           {maxSftpUsers !== undefined && (
             <span className="text-sm text-muted-foreground">
               {sftpUsers.length} / {maxSftpUsers}
@@ -1780,7 +1780,7 @@ function SftpTab({ serverId, server }: { serverId: string; server: Server }) {
                       <div className="text-xs text-muted-foreground mt-2 flex items-center gap-2">
                         <Calendar className="w-3 h-3" />
                         {new Date(user.createdAt).toLocaleString()}
-                      </div>
+                    </div>
                     </div>
                     <div className="flex gap-2">
                       <Button
@@ -1790,19 +1790,19 @@ function SftpTab({ serverId, server }: { serverId: string; server: Server }) {
                       >
                         <Edit className="w-4 h-4" />
                       </Button>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => {
-                          if (confirm("Are you sure you want to delete this SFTP user?")) {
-                            deleteSftpUserMutation.mutate(user.id);
-                          }
-                        }}
-                        disabled={deleteSftpUserMutation.isPending}
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => {
+                        if (confirm("Are you sure you want to delete this SFTP user?")) {
+                          deleteSftpUserMutation.mutate(user.id);
+                        }
+                      }}
+                      disabled={deleteSftpUserMutation.isPending}
                         title="Delete user"
-                      >
+                    >
                         <Trash className="w-4 h-4" />
-                      </Button>
+                    </Button>
                     </div>
                   </div>
                 ))}

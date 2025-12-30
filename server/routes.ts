@@ -51,6 +51,7 @@ import { existsSync, mkdirSync, createWriteStream } from "fs";
 import { createReadStream } from "fs";
 import { pipeline } from "stream/promises";
 import { readFile as readFilePromise, writeFile as writeFilePromise, unlink as unlinkPromise } from "fs/promises";
+import AdmZip from "adm-zip";
 
 // Session store
 const MemoryStore = memorystore(session);
@@ -905,6 +906,9 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       }
 
       const file = req.file;
+      const fileExt = extname(file.originalname).toLowerCase();
+      const isZip = fileExt === ".zip" || file.originalname.toLowerCase().endsWith(".tar.gz");
+      
       // Валидация и санитизация pluginId
       let pluginId: string;
       if (req.body.pluginId) {
@@ -916,7 +920,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         }
         pluginId = rawPluginId;
       } else {
-        pluginId = basename(file.originalname, extname(file.originalname));
+        pluginId = basename(file.originalname, fileExt);
       }
       const pluginPath = join(pluginsDir, pluginId);
 
@@ -925,18 +929,45 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         mkdirSync(pluginPath, { recursive: true });
       }
 
-      // Перемещаем файл в папку плагина
-      const finalPath = join(pluginPath, file.originalname);
-      const readStream = createReadStream(file.path);
-      const writeStream = createWriteStream(finalPath);
-      await pipeline(readStream, writeStream);
+      // Обработка ZIP архивов
+      if (isZip && fileExt === ".zip") {
+        try {
+          const zip = new AdmZip(file.path);
+          zip.extractAllTo(pluginPath, true); // true = overwrite existing files
+          
+          // Ищем manifest.json в распакованном архиве
+          const manifestInZip = zip.getEntry("manifest.json");
+          if (!manifestInZip) {
+            // Если нет manifest.json в корне, ищем в других местах
+            const allEntries = zip.getEntries();
+            const manifestEntry = allEntries.find((entry: any) => entry.entryName.endsWith("manifest.json"));
+            if (!manifestEntry) {
+              throw new Error("manifest.json not found in ZIP archive");
+            }
+          }
+        } catch (zipError: any) {
+          await unlinkPromise(file.path).catch(() => {});
+          return res.status(400).json({ 
+            message: `Failed to extract ZIP archive: ${zipError.message || "Invalid ZIP file"}` 
+          });
+        }
+      } else if (isZip && file.originalname.toLowerCase().endsWith(".tar.gz")) {
+        // TODO: Добавить поддержку TAR.GZ если нужно
+        await unlinkPromise(file.path).catch(() => {});
+        return res.status(400).json({ message: "TAR.GZ archives are not yet supported. Please use ZIP format." });
+      } else {
+        // Обычный файл - просто перемещаем
+        const finalPath = join(pluginPath, file.originalname);
+        const readStream = createReadStream(file.path);
+        const writeStream = createWriteStream(finalPath);
+        await pipeline(readStream, writeStream);
+      }
       
       // Удаляем временный файл
       await unlinkPromise(file.path);
 
       // Создаем или обновляем manifest.json
       const manifestPath = join(pluginPath, "manifest.json");
-      const fileExt = extname(file.originalname).toLowerCase();
       
       // Валидация и санитизация данных манифеста
       const sanitizeString = (str: any, maxLength: number = 200, defaultValue: string = ""): string => {
@@ -946,15 +977,41 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         return sanitized.replace(/[<>\"'&]/g, "");
       };
       
+      // Определяем тип файла и имя главного файла
+      let mainFile = file.originalname;
+      let detectedType = "javascript";
+      
+      if (isZip) {
+        // Для ZIP ищем manifest.json и определяем main из него
+        if (existsSync(manifestPath)) {
+          try {
+            const existingManifest = JSON.parse(await readFilePromise(manifestPath, "utf-8"));
+            if (existingManifest.main) {
+              mainFile = existingManifest.main;
+              detectedType = existingManifest.type || detectedType;
+            }
+          } catch (e) {
+            // Игнорируем ошибки парсинга существующего манифеста
+          }
+        }
+      } else {
+        // Для обычных файлов определяем тип по расширению
+        const ext = fileExt.toLowerCase();
+        if (ext === ".py") detectedType = "python";
+        else if (ext === ".jar") detectedType = "jar";
+        else if (ext === ".ts") detectedType = "typescript";
+        else detectedType = "javascript";
+      }
+      
       let manifest: any = {
         id: pluginId,
         name: sanitizeString(req.body.name, 100, pluginId),
         version: sanitizeString(req.body.version, 20, "1.0.0"),
         description: sanitizeString(req.body.description, 500, ""),
         author: sanitizeString(req.body.author, 100, "Unknown"),
-        type: sanitizeString(req.body.type, 20) || (fileExt === ".py" ? "python" : fileExt === ".jar" ? "jar" : fileExt === ".ts" ? "typescript" : "javascript"),
+        type: sanitizeString(req.body.type, 20) || detectedType,
         enabled: false,
-        main: file.originalname,
+        main: mainFile,
       };
 
       if (existsSync(manifestPath)) {
@@ -1322,7 +1379,19 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     try {
       const data = insertServerSchema.parse(req.body);
       const server = await storage.createServer(data);
-      
+
+      // Вызываем хук плагинов для события создания сервера
+      try {
+        await pluginManager.callHook("server_create", server.id, {
+          id: server.id,
+          name: server.name,
+          gameType: server.gameType,
+          nodeId: server.nodeId,
+        });
+      } catch (error) {
+        console.error("Error calling server_create hook:", error);
+      }
+
       await storage.addActivity({
         type: "server_create",
         title: "Server Created",
@@ -1349,26 +1418,38 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       return res.status(404).json({ message: "Server not found" });
     }
 
-    // Stop and remove container if exists
-    if (server.containerId) {
+      // Вызываем хук плагинов для события удаления сервера (до удаления)
       try {
-        const node = await storage.getNode(server.nodeId);
-        if (node) {
-          const container = await dockerManager.getContainer(node, server.containerId);
-          try {
-            await container.stop();
-          } catch (error) {
-            // Container might already be stopped
-            console.warn("Container stop warning:", error);
-          }
-          await container.remove();
-        }
+        await pluginManager.callHook("server_delete", server.id, {
+          id: server.id,
+          name: server.name,
+          gameType: server.gameType,
+          nodeId: server.nodeId,
+        });
       } catch (error) {
-        console.error("Error removing container:", error);
+        console.error("Error calling server_delete hook:", error);
       }
-    }
 
-    await storage.deleteServer(req.params.id);
+      // Stop and remove container if exists
+      if (server.containerId) {
+        try {
+          const node = await storage.getNode(server.nodeId);
+          if (node) {
+            const container = await dockerManager.getContainer(node, server.containerId);
+            try {
+              await container.stop();
+            } catch (error) {
+              // Container might already be stopped
+              console.warn("Container stop warning:", error);
+            }
+            await container.remove();
+          }
+        } catch (error) {
+          console.error("Error removing container:", error);
+        }
+      }
+
+      await storage.deleteServer(req.params.id);
     
     await storage.addActivity({
       type: "server_delete",
@@ -1423,6 +1504,18 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       await container.start();
       await storage.updateServer(server.id, { status: "running" });
 
+      // Вызываем хук плагинов для события запуска сервера
+      try {
+        await pluginManager.callHook("server_start", server.id, {
+          id: server.id,
+          name: server.name,
+          gameType: server.gameType,
+          nodeId: server.nodeId,
+        });
+      } catch (error) {
+        console.error("Error calling server_start hook:", error);
+      }
+
       await storage.addActivity({
         type: "server_start",
         title: "Server Started",
@@ -1466,6 +1559,18 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       await container.stop();
       await storage.updateServer(server.id, { status: "stopped" });
 
+      // Вызываем хук плагинов для события остановки сервера
+      try {
+        await pluginManager.callHook("server_stop", server.id, {
+          id: server.id,
+          name: server.name,
+          gameType: server.gameType,
+          nodeId: server.nodeId,
+        });
+      } catch (error) {
+        console.error("Error calling server_stop hook:", error);
+      }
+
       await storage.addActivity({
         type: "server_stop",
         title: "Server Stopped",
@@ -1507,6 +1612,18 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       const container = await dockerManager.getContainer(node, server.containerId);
       await container.restart();
       await storage.updateServer(server.id, { status: "running" });
+
+      // Вызываем хук плагинов для события перезапуска сервера
+      try {
+        await pluginManager.callHook("server_restart", server.id, {
+          id: server.id,
+          name: server.name,
+          gameType: server.gameType,
+          nodeId: server.nodeId,
+        });
+      } catch (error) {
+        console.error("Error calling server_restart hook:", error);
+      }
 
       await storage.addActivity({
         type: "server_restart",

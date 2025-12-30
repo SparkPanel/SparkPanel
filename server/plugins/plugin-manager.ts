@@ -204,10 +204,14 @@ export class PluginManager {
 
       if (typeof pluginInstance.initialize === "function") {
         await pluginInstance.initialize(this);
+      } else if (typeof pluginModule.initialize === "function") {
+        // Пробуем напрямую из модуля
+        await pluginModule.initialize(this);
       }
 
       this.loadedPlugins.set(pluginId, pluginInstance);
     } catch (error) {
+      console.error(`Failed to load JS plugin ${pluginId}:`, error);
       throw new Error(`Failed to load JS plugin: ${error instanceof Error ? error.message : String(error)}`);
     }
   }

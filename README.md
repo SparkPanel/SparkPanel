@@ -372,15 +372,24 @@ Enable and start the service:
 
 ```bash
 # Create the user and directory (if not already done)
-sudo useradd -r -s /bin/false sparkpanel
+sudo useradd -r -s /bin/bash -m sparkpanel
 sudo mkdir -p /opt/sparkpanel
 sudo chown -R sparkpanel:sparkpanel /opt/sparkpanel
 
+# Add sparkpanel user to docker group (required for Docker access)
+sudo usermod -aG docker sparkpanel
+
 # Copy your application files to /opt/sparkpanel
 # (or clone directly there)
+sudo cp -r /path/to/SparkPanel/* /opt/sparkpanel/
+
+# Install dependencies and build (as sparkpanel user)
+cd /opt/sparkpanel
+sudo -u sparkpanel npm install
+sudo -u sparkpanel npm run build
 
 # Make sure .env file exists at /opt/sparkpanel/.env
-# Make sure dist/ directory exists (run npm run build first)
+# Make sure dist/ directory exists
 
 # Reload systemd
 sudo systemctl daemon-reload

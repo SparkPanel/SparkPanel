@@ -3,6 +3,10 @@ import { WebSocketServer, WebSocket } from "ws";
 import { storage } from "./storage";
 import { logSecurityEvent } from "./security-logger";
 
+// Для конвертации кодировок Windows
+// @ts-ignore - iconv-lite может не иметь типов для ES модулей
+import iconv from "iconv-lite";
+
 /**
  * Управляет VDS терминалом через child_process
  */
@@ -51,22 +55,53 @@ export class VdsTerminal {
       // Создаем новый терминальный процесс
       // Используем bash в интерактивном режиме для сохранения контекста
       const shell = process.platform === "win32" ? "cmd.exe" : "/bin/bash";
-      const shellArgs = process.platform === "win32" ? [] : ["-i"]; // -i для интерактивного режима
+      const shellArgs = process.platform === "win32" ? ["/K", "chcp 65001 >nul"] : ["-i"]; // Устанавливаем UTF-8 для Windows
       const terminalProcess = spawn(shell, shellArgs, {
         stdio: ["pipe", "pipe", "pipe"],
-        env: process.env,
+        env: { ...process.env, ...(process.platform === "win32" ? { CHCP: "65001" } : {}) },
         cwd: process.cwd(),
         shell: false,
       });
 
-      // Обрабатываем вывод команды
+      // Обрабатываем вывод команды с правильной кодировкой
       terminalProcess.stdout.on("data", (data: Buffer) => {
-        const output = data.toString();
+        let output: string;
+        if (process.platform === "win32") {
+          // Windows консоль (cmd.exe) по умолчанию использует CP866 (OEM кодировка)
+          // Конвертируем в UTF-8 для корректного отображения в браузере
+          try {
+            output = (iconv as any).decode(data, "cp866");
+          } catch (e) {
+            // Если не получилось, пробуем UTF-8 (на случай если chcp 65001 сработал)
+            try {
+              output = data.toString("utf8");
+            } catch (e2) {
+              // Последняя попытка
+              output = data.toString("latin1");
+            }
+          }
+        } else {
+          output = data.toString("utf8");
+        }
         this.broadcastOutput(userId, output);
       });
 
       terminalProcess.stderr.on("data", (data: Buffer) => {
-        const output = data.toString();
+        let output: string;
+        if (process.platform === "win32") {
+          // Windows консоль использует CP866
+          try {
+            output = (iconv as any).decode(data, "cp866");
+          } catch (e) {
+            try {
+              output = data.toString("utf8");
+            } catch (e2) {
+              output = data.toString("latin1");
+            }
+          }
+        } else {
+          output = data.toString("utf8");
+        }
         this.broadcastOutput(userId, output);
       });
 
@@ -161,8 +196,19 @@ export class VdsTerminal {
         userId: user.id,
       }).catch(() => {});
 
-      // Отправляем команду в stdin терминала
-      terminalProcess.stdin?.write(command + "\n");
+      // Отправляем команду в stdin терминала с правильной кодировкой
+      if (process.platform === "win32") {
+        try {
+          // Кодируем команду в CP866 для Windows консоли
+          const encoded = (iconv as any).encode(command + "\n", "cp866");
+          terminalProcess.stdin?.write(encoded);
+        } catch (e) {
+          // Если не получилось закодировать, отправляем как UTF-8
+          terminalProcess.stdin?.write(command + "\n", "utf8");
+        }
+      } else {
+        terminalProcess.stdin?.write(command + "\n", "utf8");
+      }
 
     } catch (error: any) {
       console.error(`Failed to execute command for user ${userId}:`, error);

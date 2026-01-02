@@ -3942,55 +3942,138 @@ function generateStartupCommand(server: Server): string[] {
     return ["/bin/sh", "-c", startupSettings.startupCommand.trim()];
   }
   
-  // For Minecraft and other Java-based servers, generate Java command
-  if (server.gameType === "minecraft" || server.gameType === "custom") {
-    const jarFile = startupSettings.jarFile || "server.jar";
-    const javaVersion = startupSettings.javaVersion || "Java 21";
-    const gc = startupSettings.garbageCollector || "UseG1GC";
-    const timeZone = startupSettings.timeZone || "UTC";
-    const memoryPercent = startupSettings.memoryPercent || 95;
-    const minMemory = startupSettings.minMemory || "128M";
-    const additionalArgs = startupSettings.additionalArgs || "";
-    
-    // Calculate max memory based on RAM limit and percentage
-    const maxMemoryMB = Math.floor((server.ramLimit * 1024 * memoryPercent) / 100);
-    const maxMemory = `${maxMemoryMB}M`;
-    
-    // Build Java command
-    const javaCmd = javaVersion.toLowerCase().replace("java ", "");
-    const javaExec = javaCmd === "8" || javaCmd === "11" || javaCmd === "17" || javaCmd === "21" 
-      ? `java` 
-      : "java"; // Default to java if version not recognized
-    
-    // Build JVM arguments
-    const jvmArgs: string[] = [
-      `-Xms${minMemory}`,
-      `-Xmx${maxMemory}`,
-      `-XX:${gc}`,
-      `-Duser.timezone=${timeZone}`,
-      `-Dfile.encoding=UTF-8`,
-    ];
-    
-    // Add additional arguments if provided
-    if (additionalArgs.trim()) {
-      const args = additionalArgs.trim().split(/\s+/).filter((arg: string) => arg.length > 0);
-      jvmArgs.push(...args);
+  // Generate command based on game type
+  switch (server.gameType) {
+    case "minecraft":
+    case "custom": {
+      // Java-based servers (Minecraft, custom Java servers)
+      const jarFile = startupSettings.jarFile || "server.jar";
+      const javaVersion = startupSettings.javaVersion || "Java 21";
+      const gc = startupSettings.garbageCollector || "UseG1GC";
+      const timeZone = startupSettings.timeZone || "UTC";
+      const memoryPercent = startupSettings.memoryPercent || 95;
+      const minMemory = startupSettings.minMemory || "128M";
+      const additionalArgs = startupSettings.additionalArgs || "";
+      
+      // Calculate max memory based on RAM limit and percentage
+      const maxMemoryMB = Math.floor((server.ramLimit * 1024 * memoryPercent) / 100);
+      const maxMemory = `${maxMemoryMB}M`;
+      
+      // Build JVM arguments
+      const jvmArgs: string[] = [
+        `-Xms${minMemory}`,
+        `-Xmx${maxMemory}`,
+        `-XX:${gc}`,
+        `-Duser.timezone=${timeZone}`,
+        `-Dfile.encoding=UTF-8`,
+      ];
+      
+      // Add additional arguments if provided
+      if (additionalArgs.trim()) {
+        const args = additionalArgs.trim().split(/\s+/).filter((arg: string) => arg.length > 0);
+        jvmArgs.push(...args);
+      }
+      
+      // Build final command
+      const command = [
+        "java",
+        ...jvmArgs,
+        "-jar",
+        jarFile,
+        "nogui"
+      ].join(" ");
+      
+      return ["/bin/sh", "-c", command];
     }
     
-    // Build final command
-    const command = [
-      javaExec,
-      ...jvmArgs,
-      "-jar",
-      jarFile,
-      "nogui"
-    ].join(" ");
+    case "csgo": {
+      // CS:GO server uses srcds_run
+      const additionalArgs = startupSettings.additionalArgs || "";
+      const timeZone = startupSettings.timeZone || "UTC";
+      
+      let command = `export TZ=${timeZone} && ./srcds_run -game csgo -console -usercon +port ${server.port}`;
+      
+      if (additionalArgs.trim()) {
+        command += ` ${additionalArgs.trim()}`;
+      }
+      
+      return ["/bin/sh", "-c", command];
+    }
     
-    return ["/bin/sh", "-c", command];
+    case "rust": {
+      // Rust server
+      const additionalArgs = startupSettings.additionalArgs || "";
+      const timeZone = startupSettings.timeZone || "UTC";
+      
+      let command = `export TZ=${timeZone} && ./RustDedicated -batchmode -server.port ${server.port}`;
+      
+      if (additionalArgs.trim()) {
+        command += ` ${additionalArgs.trim()}`;
+      }
+      
+      return ["/bin/sh", "-c", command];
+    }
+    
+    case "ark": {
+      // ARK server
+      const additionalArgs = startupSettings.additionalArgs || "";
+      const timeZone = startupSettings.timeZone || "UTC";
+      
+      let command = `export TZ=${timeZone} && ./ShooterGameServer -server -port=${server.port}`;
+      
+      if (additionalArgs.trim()) {
+        command += ` ${additionalArgs.trim()}`;
+      }
+      
+      return ["/bin/sh", "-c", command];
+    }
+    
+    case "valheim": {
+      // Valheim server
+      const additionalArgs = startupSettings.additionalArgs || "";
+      const timeZone = startupSettings.timeZone || "UTC";
+      
+      let command = `export TZ=${timeZone} && ./valheim_server.x86_64 -port ${server.port}`;
+      
+      if (additionalArgs.trim()) {
+        command += ` ${additionalArgs.trim()}`;
+      }
+      
+      return ["/bin/sh", "-c", command];
+    }
+    
+    case "terraria": {
+      // Terraria server
+      const additionalArgs = startupSettings.additionalArgs || "";
+      const timeZone = startupSettings.timeZone || "UTC";
+      
+      let command = `export TZ=${timeZone} && ./TerrariaServer -port ${server.port}`;
+      
+      if (additionalArgs.trim()) {
+        command += ` ${additionalArgs.trim()}`;
+      }
+      
+      return ["/bin/sh", "-c", command];
+    }
+    
+    case "gmod": {
+      // Garry's Mod server
+      const additionalArgs = startupSettings.additionalArgs || "";
+      const timeZone = startupSettings.timeZone || "UTC";
+      
+      let command = `export TZ=${timeZone} && ./srcds_run -game garrysmod -console -port ${server.port}`;
+      
+      if (additionalArgs.trim()) {
+        command += ` ${additionalArgs.trim()}`;
+      }
+      
+      return ["/bin/sh", "-c", command];
+    }
+    
+    default:
+      // For unknown game types, return empty to use image default
+      return [];
   }
-  
-  // For other game types, use default entrypoint
-  return [];
 }
 
 // Helper function to create Docker container for game server
@@ -4040,10 +4123,14 @@ async function createGameServerContainer(server: Server, node: any) {
     const cmd = generateStartupCommand(server);
     
     // Prepare environment variables
-    const envVars = [
-      "EULA=TRUE",
-      `SERVER_PORT=${server.port}`,
-    ];
+    const envVars: string[] = [];
+    
+    // Add game-specific environment variables
+    if (server.gameType === "minecraft" || server.gameType === "custom") {
+      envVars.push("EULA=TRUE");
+    }
+    
+    envVars.push(`SERVER_PORT=${server.port}`);
     
     // Add timezone if specified
     const config = server.config as any || {};

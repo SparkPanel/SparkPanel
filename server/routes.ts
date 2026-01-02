@@ -3447,15 +3447,22 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     // Обогащаем активности информацией о пользователе
     const enrichedActivities = await Promise.all(
       activities.map(async (activity) => {
+        // Убеждаемся, что timestamp правильно сериализуется в ISO строку
+        const timestamp = activity.timestamp instanceof Date 
+          ? activity.timestamp.toISOString() 
+          : new Date(activity.timestamp).toISOString();
+        
         if (activity.userId) {
           const user = await storage.getUser(activity.userId);
           return {
             ...activity,
+            timestamp,
             performedBy: user?.username || "Unknown",
           };
         }
         return {
           ...activity,
+          timestamp,
           performedBy: "System",
         };
       })

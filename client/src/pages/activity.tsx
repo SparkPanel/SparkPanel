@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { formatDistanceToNow } from "date-fns";
+import { ru } from "date-fns/locale";
 import type { Activity as ActivityEntry, ActivityType, User as UserType, Server as ServerType } from "@shared/schema";
 import type { LucideIcon } from "lucide-react";
 
@@ -309,7 +311,7 @@ export default function ActivityPage() {
                             </Badge>
                           </div>
                         <span className="text-xs text-muted-foreground">
-                          {formatTimeAgo(new Date(activity.timestamp))}
+                          {formatTimeAgo(activity.timestamp)}
                         </span>
                       </div>
                       <p className="text-sm text-muted-foreground mb-2">
@@ -336,11 +338,24 @@ export default function ActivityPage() {
   );
 }
 
-function formatTimeAgo(date: Date): string {
-  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
-  
-  if (seconds < 60) return `${seconds}s ago`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-  return `${Math.floor(seconds / 86400)}d ago`;
+function formatTimeAgo(date: Date | string): string {
+  try {
+    // Парсим дату, если она пришла как строка
+    const dateObj = typeof date === 'string' ? new Date(date) : date;
+    
+    // Проверяем валидность даты
+    if (isNaN(dateObj.getTime())) {
+      console.warn('Invalid date:', date);
+      return 'Неверная дата';
+    }
+    
+    // Используем date-fns для правильного форматирования
+    return formatDistanceToNow(dateObj, { 
+      addSuffix: true, 
+      locale: ru 
+    });
+  } catch (error) {
+    console.error('Error formatting date:', error, date);
+    return 'Неверная дата';
+  }
 }

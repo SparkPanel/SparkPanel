@@ -350,7 +350,8 @@ export class PostgresStorage implements IStorage {
       type: r.type as ActivityType,
       title: r.title,
       description: r.description,
-      timestamp: r.timestamp,
+      // Убеждаемся, что timestamp всегда является объектом Date
+      timestamp: r.timestamp instanceof Date ? r.timestamp : new Date(r.timestamp),
       userId: r.userId || undefined,
     }));
   }

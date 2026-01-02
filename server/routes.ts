@@ -3932,17 +3932,78 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
   return httpServer;
 }
 
+// Helper function to generate startup command based on server settings
+function generateStartupCommand(server: Server): string[] {
+  const config = server.config as any || {};
+  const startupSettings = config.startupSettings || {};
+  
+  // If custom startup command is provided, use it
+  if (startupSettings.startupCommand && startupSettings.startupCommand.trim()) {
+    return ["/bin/sh", "-c", startupSettings.startupCommand.trim()];
+  }
+  
+  // For Minecraft and other Java-based servers, generate Java command
+  if (server.gameType === "minecraft" || server.gameType === "custom") {
+    const jarFile = startupSettings.jarFile || "server.jar";
+    const javaVersion = startupSettings.javaVersion || "Java 21";
+    const gc = startupSettings.garbageCollector || "UseG1GC";
+    const timeZone = startupSettings.timeZone || "UTC";
+    const memoryPercent = startupSettings.memoryPercent || 95;
+    const minMemory = startupSettings.minMemory || "128M";
+    const additionalArgs = startupSettings.additionalArgs || "";
+    
+    // Calculate max memory based on RAM limit and percentage
+    const maxMemoryMB = Math.floor((server.ramLimit * 1024 * memoryPercent) / 100);
+    const maxMemory = `${maxMemoryMB}M`;
+    
+    // Build Java command
+    const javaCmd = javaVersion.toLowerCase().replace("java ", "");
+    const javaExec = javaCmd === "8" || javaCmd === "11" || javaCmd === "17" || javaCmd === "21" 
+      ? `java` 
+      : "java"; // Default to java if version not recognized
+    
+    // Build JVM arguments
+    const jvmArgs: string[] = [
+      `-Xms${minMemory}`,
+      `-Xmx${maxMemory}`,
+      `-XX:${gc}`,
+      `-Duser.timezone=${timeZone}`,
+      `-Dfile.encoding=UTF-8`,
+    ];
+    
+    // Add additional arguments if provided
+    if (additionalArgs.trim()) {
+      const args = additionalArgs.trim().split(/\s+/).filter(arg => arg.length > 0);
+      jvmArgs.push(...args);
+    }
+    
+    // Build final command
+    const command = [
+      javaExec,
+      ...jvmArgs,
+      "-jar",
+      jarFile,
+      "nogui"
+    ].join(" ");
+    
+    return ["/bin/sh", "-c", command];
+  }
+  
+  // For other game types, use default entrypoint
+  return [];
+}
+
 // Helper function to create Docker container for game server
 async function createGameServerContainer(server: Server, node: any) {
   const imageMap: Record<string, string> = {
-    minecraft: "itzg/minecraft-server",
+    minecraft: "eclipse-temurin:21-jre",
     csgo: "cm2network/csgo",
     rust: "didstopia/rust-server",
     ark: "turzam/ark",
     valheim: "lloesche/valheim-server",
     terraria: "ryshe/terraria",
     gmod: "cm2network/gmod",
-    custom: "ubuntu:latest",
+    custom: "eclipse-temurin:21-jre",
   };
 
   const image = imageMap[server.gameType] || imageMap.custom;
@@ -3972,8 +4033,24 @@ async function createGameServerContainer(server: Server, node: any) {
       });
     });
 
+    // Generate startup command
+    const cmd = generateStartupCommand(server);
+    
+    // Prepare environment variables
+    const envVars = [
+      "EULA=TRUE",
+      `SERVER_PORT=${server.port}`,
+    ];
+    
+    // Add timezone if specified
+    const config = server.config as any || {};
+    const startupSettings = config.startupSettings || {};
+    if (startupSettings.timeZone) {
+      envVars.push(`TZ=${startupSettings.timeZone}`);
+    }
+
     // Create container using dockerManager
-    const container = await dockerManager.createContainer(node, {
+    const containerConfig: any = {
       Image: image,
       name: `sparkpanel-${server.id}`,
       HostConfig: {
@@ -3983,11 +4060,15 @@ async function createGameServerContainer(server: Server, node: any) {
           [`${server.port}/tcp`]: [{ HostPort: server.port.toString() }],
         },
       },
-      Env: [
-        "EULA=TRUE",
-        `SERVER_PORT=${server.port}`,
-      ],
-    });
+      Env: envVars,
+    };
+    
+    // Add command if generated
+    if (cmd.length > 0) {
+      containerConfig.Cmd = cmd;
+    }
+    
+    const container = await dockerManager.createContainer(node, containerConfig);
 
     return container;
   } catch (error: any) {

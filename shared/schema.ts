@@ -284,6 +284,7 @@ export const activityTypes = [
   "port_create",
   "port_delete",
   "sftp_user_create",
+  "sftp_user_update",
   "sftp_user_delete",
   "node_add",
   "node_delete",

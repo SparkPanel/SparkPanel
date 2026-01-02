@@ -1600,9 +1600,15 @@ function SftpTab({ serverId, server }: { serverId: string; server: Server }) {
   });
   const { toast } = useToast();
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<SftpUser | null>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [homeDirectory, setHomeDirectory] = useState("/data");
+  const [editUsername, setEditUsername] = useState("");
+  const [editPassword, setEditPassword] = useState("");
+  const [editHomeDirectory, setEditHomeDirectory] = useState("/data");
+  const [editIsActive, setEditIsActive] = useState(true);
 
   const createSftpUserMutation = useMutation({
     mutationFn: async () => {
@@ -1638,6 +1644,47 @@ function SftpTab({ serverId, server }: { serverId: string; server: Server }) {
     },
   });
 
+  const updateSftpUserMutation = useMutation({
+    mutationFn: async ({ userId, data }: { userId: string; data: { username?: string; password?: string; homeDirectory?: string; isActive?: boolean } }) => {
+      const meResponse = await fetch("/api/auth/me", { credentials: "include" });
+      const meData = await meResponse.json();
+      const csrfToken = meData.csrfToken;
+
+      const payload: any = {};
+      if (data.username !== undefined) payload.username = data.username;
+      if (data.password !== undefined && data.password.length > 0) payload.password = data.password;
+      if (data.homeDirectory !== undefined) payload.homeDirectory = data.homeDirectory;
+      if (data.isActive !== undefined) payload.isActive = data.isActive;
+
+      const response = await fetch(`/api/servers/${serverId}/sftp/${userId}`, {
+        method: "PUT",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": csrfToken,
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to update SFTP user");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({ title: "SFTP user updated", description: "SFTP user has been updated successfully" });
+      setEditDialogOpen(false);
+      setEditingUser(null);
+      setEditUsername("");
+      setEditPassword("");
+      setEditHomeDirectory("/data");
+      refetch();
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to update SFTP user", description: error.message || "An error occurred", variant: "destructive" });
+    },
+  });
+
   const deleteSftpUserMutation = useMutation({
     mutationFn: async (userId: string) => {
       const meResponse = await fetch("/api/auth/me", { credentials: "include" });
@@ -1665,6 +1712,15 @@ function SftpTab({ serverId, server }: { serverId: string; server: Server }) {
       toast({ title: "Failed to delete SFTP user", description: error.message || "An error occurred", variant: "destructive" });
     },
   });
+
+  const handleEdit = (user: SftpUser) => {
+    setEditingUser(user);
+    setEditUsername(user.username);
+    setEditPassword("");
+    setEditHomeDirectory(user.homeDirectory);
+    setEditIsActive(user.isActive);
+    setEditDialogOpen(true);
+  };
 
   const maxSftpUsers = server.limits?.maxSftpUsers;
   const canCreateUser = maxSftpUsers === undefined || sftpUsers.length < maxSftpUsers;
@@ -1787,6 +1843,7 @@ function SftpTab({ serverId, server }: { serverId: string; server: Server }) {
                         variant="outline"
                         size="sm"
                         title="Edit user"
+                        onClick={() => handleEdit(user)}
                       >
                         <Edit className="w-4 h-4" />
                       </Button>

@@ -2947,6 +2947,126 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   );
 
+  app.put(
+    "/api/servers/:id/sftp/:userId",
+    requireAuth,
+    requirePermission("servers.control"),
+    requireCSRF,
+    checkServerAccess,
+    async (req, res) => {
+      try {
+        if (!isValidUUID(req.params.id) || !isValidUUID(req.params.userId)) {
+          return res.status(400).json({ message: "Invalid ID format" });
+        }
+
+        const sftpUser = await storage.getSftpUser(req.params.userId);
+        if (!sftpUser || sftpUser.serverId !== req.params.id) {
+          return res.status(404).json({ message: "SFTP user not found" });
+        }
+
+        const server = await storage.getServer(req.params.id);
+        if (!server) {
+          return res.status(404).json({ message: "Server not found" });
+        }
+
+        const { username, password, homeDirectory, isActive } = req.body;
+        const updates: any = {};
+
+        if (username !== undefined) {
+          if (typeof username !== "string" || username.length < 3) {
+            return res.status(400).json({ message: "Username must be at least 3 characters" });
+          }
+          // Проверка уникальности имени пользователя для этого сервера
+          const sftpUsers = await storage.getSftpUsersByServer(req.params.id);
+          const existingUser = sftpUsers.find(u => u.username === username && u.id !== req.params.userId);
+          if (existingUser) {
+            return res.status(409).json({ message: "Username already exists for this server" });
+          }
+          updates.username = sanitizeUsername(username);
+        }
+
+        if (password !== undefined) {
+          if (typeof password !== "string" || password.length < 4) {
+            return res.status(400).json({ message: "Password must be at least 4 characters" });
+          }
+          // Хешируем пароль
+          updates.password = await bcrypt.hash(password, 10);
+        }
+
+        if (homeDirectory !== undefined) {
+          updates.homeDirectory = homeDirectory ? sanitizePath(homeDirectory) : "/data";
+        }
+
+        if (isActive !== undefined) {
+          updates.isActive = isActive === true;
+        }
+
+        // Обновляем в базе данных
+        const updatedUser = await storage.updateSftpUser(req.params.userId, updates);
+        if (!updatedUser) {
+          return res.status(500).json({ message: "Failed to update SFTP user" });
+        }
+
+        // Обновляем SFTP пользователя в контейнере, если есть изменения
+        if (server.containerId && (updates.username || updates.password || updates.homeDirectory)) {
+          try {
+            const node = await storage.getNode(server.nodeId);
+            if (node) {
+              // Если username изменился, нужно удалить старый и создать новый
+              if (updates.username && updates.username !== sftpUser.username) {
+                await removeSftpUserFromContainer(node, server.containerId, sftpUser.username);
+                await setupSftpUserInContainer(node, server.containerId, {
+                  username: updates.username,
+                  password: password || "changeme123", // Временный пароль, если не указан новый
+                  homeDirectory: updates.homeDirectory || sftpUser.homeDirectory,
+                });
+              } else if (updates.password || updates.homeDirectory) {
+                // Обновляем только пароль или homeDirectory (username не изменился)
+                await setupSftpUserInContainer(node, server.containerId, {
+                  username: updatedUser.username,
+                  password: password || "changeme123", // Используем новый пароль если есть
+                  homeDirectory: updates.homeDirectory || sftpUser.homeDirectory,
+                });
+              }
+            }
+          } catch (error: any) {
+            console.error("Failed to update SFTP user in container:", error);
+            // Не прерываем обновление в базе данных, но логируем ошибку
+          }
+        }
+
+        // Вызываем хук плагинов для события обновления SFTP пользователя
+        try {
+          await pluginManager.callHook("sftp_user_update", server.id, {
+            sftpUserId: updatedUser.id,
+            serverId: server.id,
+            serverName: server.name,
+            username: updatedUser.username,
+            homeDirectory: updatedUser.homeDirectory,
+            isActive: updatedUser.isActive,
+            updatedBy: req.currentUser?.id,
+          });
+        } catch (error) {
+          console.error("Error calling sftp_user_update hook:", error);
+        }
+
+        await storage.addActivity({
+          type: "sftp_user_update",
+          title: "SFTP User Updated",
+          description: `SFTP user '${updatedUser.username}' updated for server '${server.name}'`,
+          timestamp: new Date(),
+          userId: req.currentUser?.id,
+        }).catch(() => {});
+
+        // Возвращаем пользователя без пароля
+        const { password: _, ...safeUser } = updatedUser;
+        res.json(safeUser);
+      } catch (error: any) {
+        res.status(500).json({ message: error.message || "Failed to update SFTP user" });
+      }
+    }
+  );
+
   app.delete(
     "/api/servers/:id/sftp/:userId",
     requireAuth,

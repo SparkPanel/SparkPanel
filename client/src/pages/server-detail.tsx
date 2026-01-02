@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState, useEffect, useRef } from "react";
 import { ArrowLeft, Play, Square, RotateCw, Trash2, Terminal, FolderOpen, Settings as SettingsIcon, BarChart3, Send, Database, Network, Key, Download, Trash, Edit, Save, X, Search, Filter, Copy, ChevronLeft, ChevronRight, FileText, Folder, Clock, Calendar } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -901,6 +902,18 @@ function SettingsTab({ server }: { server: Server }) {
   const [ramLimit, setRamLimit] = useState(server.ramLimit);
   const [diskLimit, setDiskLimit] = useState(server.diskLimit);
   const [autoStart, setAutoStart] = useState(server.autoStart);
+  
+  // Startup settings
+  const config = server.config as any || {};
+  const startupSettings = config.startupSettings || {};
+  const [jarFile, setJarFile] = useState(startupSettings.jarFile || "server.jar");
+  const [javaVersion, setJavaVersion] = useState(startupSettings.javaVersion || "Java 21");
+  const [garbageCollector, setGarbageCollector] = useState(startupSettings.garbageCollector || "UseG1GC");
+  const [timeZone, setTimeZone] = useState(startupSettings.timeZone || "Europe/Moscow");
+  const [memoryPercent, setMemoryPercent] = useState(startupSettings.memoryPercent || 95);
+  const [minMemory, setMinMemory] = useState(startupSettings.minMemory || "128M");
+  const [additionalArgs, setAdditionalArgs] = useState(startupSettings.additionalArgs || "");
+  const [startupCommand, setStartupCommand] = useState(startupSettings.startupCommand || "");
 
   const updateMutation = useMutation({
     mutationFn: async (updates: Partial<Server>) => {

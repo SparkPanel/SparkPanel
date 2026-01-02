@@ -3973,7 +3973,7 @@ function generateStartupCommand(server: Server): string[] {
     
     // Add additional arguments if provided
     if (additionalArgs.trim()) {
-      const args = additionalArgs.trim().split(/\s+/).filter(arg => arg.length > 0);
+      const args = additionalArgs.trim().split(/\s+/).filter((arg: string) => arg.length > 0);
       jvmArgs.push(...args);
     }
     
@@ -4005,6 +4005,9 @@ async function createGameServerContainer(server: Server, node: any) {
     gmod: "cm2network/gmod",
     custom: "eclipse-temurin:21-jre",
   };
+  
+  // For game types that use their own images, we might not need custom Cmd
+  const usesCustomCommand = ["minecraft", "custom"].includes(server.gameType);
 
   const image = imageMap[server.gameType] || imageMap.custom;
 

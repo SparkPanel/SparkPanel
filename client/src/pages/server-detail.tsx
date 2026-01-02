@@ -1107,6 +1107,127 @@ function SettingsTab({ server }: { server: Server }) {
         </div>
 
         <div className="space-y-4 pt-4 border-t">
+          <h4 className="font-semibold">Startup Settings</h4>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>JAR File</Label>
+                {editMode ? (
+                  <Input
+                    value={jarFile}
+                    onChange={(e) => setJarFile(e.target.value)}
+                    placeholder="server.jar"
+                  />
+                ) : (
+                  <p className="font-mono text-sm">{jarFile}</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label>Java Version</Label>
+                {editMode ? (
+                  <Select value={javaVersion} onValueChange={setJavaVersion}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Java 8">Java 8</SelectItem>
+                      <SelectItem value="Java 11">Java 11</SelectItem>
+                      <SelectItem value="Java 17">Java 17</SelectItem>
+                      <SelectItem value="Java 21">Java 21</SelectItem>
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <p className="text-sm">{javaVersion}</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label>Garbage Collector</Label>
+                {editMode ? (
+                  <Select value={garbageCollector} onValueChange={setGarbageCollector}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="UseSerialGC">UseSerialGC</SelectItem>
+                      <SelectItem value="UseG1GC">UseG1GC</SelectItem>
+                      <SelectItem value="UseZGC">UseZGC</SelectItem>
+                      <SelectItem value="UseParallelGC">UseParallelGC</SelectItem>
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <p className="text-sm font-mono">{garbageCollector}</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label>Time Zone</Label>
+                {editMode ? (
+                  <Input
+                    value={timeZone}
+                    onChange={(e) => setTimeZone(e.target.value)}
+                    placeholder="Europe/Moscow"
+                  />
+                ) : (
+                  <p className="text-sm">{timeZone}</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label>Memory Percent (%)</Label>
+                {editMode ? (
+                  <Input
+                    type="number"
+                    value={memoryPercent}
+                    onChange={(e) => setMemoryPercent(parseInt(e.target.value) || 95)}
+                    min="1"
+                    max="100"
+                  />
+                ) : (
+                  <p className="text-sm">{memoryPercent}%</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label>Min Memory</Label>
+                {editMode ? (
+                  <Input
+                    value={minMemory}
+                    onChange={(e) => setMinMemory(e.target.value)}
+                    placeholder="128M"
+                  />
+                ) : (
+                  <p className="text-sm font-mono">{minMemory}</p>
+                )}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Additional Arguments</Label>
+              {editMode ? (
+                <Textarea
+                  value={additionalArgs}
+                  onChange={(e) => setAdditionalArgs(e.target.value)}
+                  placeholder="Additional JVM arguments"
+                  rows={3}
+                />
+              ) : (
+                <p className="text-sm font-mono whitespace-pre-wrap">{additionalArgs || "None"}</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label>Startup Command (optional - overrides generated command)</Label>
+              {editMode ? (
+                <Textarea
+                  value={startupCommand}
+                  onChange={(e) => setStartupCommand(e.target.value)}
+                  placeholder="Custom startup command (leave empty to use generated command)"
+                  rows={4}
+                  className="font-mono text-xs"
+                />
+              ) : (
+                <p className="text-sm font-mono whitespace-pre-wrap bg-muted p-2 rounded">{startupCommand || "Auto-generated"}</p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-4 pt-4 border-t">
           <h4 className="font-semibold">System Information</h4>
         <div className="grid grid-cols-2 gap-4 text-sm">
           <div>

@@ -2,6 +2,7 @@ import { useParams, useLocation, Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState, useEffect, useRef } from "react";
 import { ArrowLeft, Play, Square, RotateCw, Trash2, Terminal, FolderOpen, Settings as SettingsIcon, BarChart3, Send, Database, Network, Key, Download, Trash, Edit, Save, X, Search, Filter, Copy, ChevronLeft, ChevronRight, FileText, Folder, Clock, Calendar } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -917,6 +918,7 @@ function SettingsTab({ server }: { server: Server }) {
   });
 
   const handleSave = () => {
+    const config = server.config as any || {};
     updateMutation.mutate({
       name,
       port,
@@ -924,6 +926,19 @@ function SettingsTab({ server }: { server: Server }) {
       ramLimit,
       diskLimit,
       autoStart,
+      config: {
+        ...config,
+        startupSettings: {
+          jarFile,
+          javaVersion,
+          garbageCollector,
+          timeZone,
+          memoryPercent,
+          minMemory,
+          additionalArgs,
+          startupCommand,
+        },
+      },
     });
   };
 
@@ -934,6 +949,16 @@ function SettingsTab({ server }: { server: Server }) {
     setRamLimit(server.ramLimit);
     setDiskLimit(server.diskLimit);
     setAutoStart(server.autoStart);
+    const config = server.config as any || {};
+    const startupSettings = config.startupSettings || {};
+    setJarFile(startupSettings.jarFile || "server.jar");
+    setJavaVersion(startupSettings.javaVersion || "Java 21");
+    setGarbageCollector(startupSettings.garbageCollector || "UseG1GC");
+    setTimeZone(startupSettings.timeZone || "Europe/Moscow");
+    setMemoryPercent(startupSettings.memoryPercent || 95);
+    setMinMemory(startupSettings.minMemory || "128M");
+    setAdditionalArgs(startupSettings.additionalArgs || "");
+    setStartupCommand(startupSettings.startupCommand || "");
     setEditMode(false);
   };
 
@@ -1866,6 +1891,75 @@ function SftpTab({ serverId, server }: { serverId: string; server: Server }) {
               </div>
             </ScrollArea>
           </>
+        )}
+        {editingUser && (
+          <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Edit SFTP User</DialogTitle>
+                <DialogDescription>Update SFTP user information</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label>Username</Label>
+                  <Input
+                    value={editUsername}
+                    onChange={(e) => setEditUsername(e.target.value)}
+                    className="mt-2"
+                    placeholder="sftp_user"
+                  />
+                </div>
+                <div>
+                  <Label>New Password (leave empty to keep current)</Label>
+                  <Input
+                    type="password"
+                    value={editPassword}
+                    onChange={(e) => setEditPassword(e.target.value)}
+                    className="mt-2"
+                    placeholder="••••••••"
+                  />
+                </div>
+                <div>
+                  <Label>Home Directory</Label>
+                  <Input
+                    value={editHomeDirectory}
+                    onChange={(e) => setEditHomeDirectory(e.target.value)}
+                    className="mt-2"
+                    placeholder="/data"
+                  />
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="edit-is-active"
+                    checked={editIsActive}
+                    onChange={(e) => setEditIsActive(e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300"
+                  />
+                  <Label htmlFor="edit-is-active" className="cursor-pointer">Active</Label>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => updateSftpUserMutation.mutate({
+                      userId: editingUser.id,
+                      data: {
+                        username: editUsername,
+                        password: editPassword,
+                        homeDirectory: editHomeDirectory,
+                        isActive: editIsActive,
+                      }
+                    })}
+                    disabled={updateSftpUserMutation.isPending || !editUsername.trim()}
+                  >
+                    {updateSftpUserMutation.isPending ? "Updating..." : "Update"}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
         )}
       </CardContent>
     </Card>

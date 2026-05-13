@@ -3,20 +3,15 @@ import { WebSocketServer, WebSocket } from "ws";
 import { storage } from "./storage";
 import { logSecurityEvent } from "./security-logger";
 
-// Для конвертации кодировок Windows
-// @ts-ignore - iconv-lite может не иметь типов для ES модулей
+
 import iconv from "iconv-lite";
 
-/**
- * Управляет VDS терминалом через child_process
- */
-export class VdsTerminal {
-  private terminalProcesses: Map<string, ChildProcess> = new Map(); // userId -> process
-  private terminalSubscribers: Map<string, Set<WebSocket>> = new Map(); // userId -> WebSocket clients
 
-  /**
-   * Подключиться к VDS терминалу
-   */
+export class VdsTerminal {
+  private terminalProcesses: Map<string, ChildProcess> = new Map(); 
+  private terminalSubscribers: Map<string, Set<WebSocket>> = new Map();
+
+  
   async connect(userId: string, ws: WebSocket): Promise<void> {
     try {
       const user = await storage.getUser(userId);
@@ -28,7 +23,7 @@ export class VdsTerminal {
         return;
       }
 
-      // Проверяем права доступа (требуется kvm.access)
+      
       if (!user.permissions.includes("kvm.access")) {
         ws.send(JSON.stringify({
           type: "vds_terminal_error",
@@ -37,13 +32,13 @@ export class VdsTerminal {
         return;
       }
 
-      // Добавляем клиента в список подписчиков
+      
       if (!this.terminalSubscribers.has(userId)) {
         this.terminalSubscribers.set(userId, new Set());
       }
       this.terminalSubscribers.get(userId)!.add(ws);
 
-      // Если терминал уже запущен для этого пользователя, просто отправляем подтверждение
+      
       if (this.terminalProcesses.has(userId)) {
         ws.send(JSON.stringify({
           type: "vds_terminal_connected",
@@ -52,8 +47,7 @@ export class VdsTerminal {
         return;
       }
 
-      // Создаем новый терминальный процесс
-      // Используем bash в интерактивном режиме для сохранения контекста
+      
       const shell = process.platform === "win32" ? "cmd.exe" : "/bin/bash";
       const shellArgs = process.platform === "win32" ? ["/K", "chcp 65001 >nul"] : ["-i"]; // Устанавливаем UTF-8 для Windows
       const terminalProcess = spawn(shell, shellArgs, {
@@ -63,20 +57,19 @@ export class VdsTerminal {
         shell: false,
       });
 
-      // Обрабатываем вывод команды с правильной кодировкой
+      
       terminalProcess.stdout.on("data", (data: Buffer) => {
         let output: string;
         if (process.platform === "win32") {
-          // Windows консоль (cmd.exe) по умолчанию использует CP866 (OEM кодировка)
-          // Конвертируем в UTF-8 для корректного отображения в браузере
+          
           try {
             output = (iconv as any).decode(data, "cp866");
           } catch (e) {
-            // Если не получилось, пробуем UTF-8 (на случай если chcp 65001 сработал)
+            
             try {
               output = data.toString("utf8");
             } catch (e2) {
-              // Последняя попытка
+              
               output = data.toString("latin1");
             }
           }
@@ -89,7 +82,7 @@ export class VdsTerminal {
       terminalProcess.stderr.on("data", (data: Buffer) => {
         let output: string;
         if (process.platform === "win32") {
-          // Windows консоль использует CP866
+          
           try {
             output = (iconv as any).decode(data, "cp866");
           } catch (e) {
@@ -105,14 +98,14 @@ export class VdsTerminal {
         this.broadcastOutput(userId, output);
       });
 
-      // Обрабатываем завершение процесса
+      
       terminalProcess.on("exit", (code) => {
         this.broadcastOutput(userId, `\n[Process exited with code ${code}]\n`);
         this.terminalProcesses.delete(userId);
         this.broadcastOutput(userId, "[Terminal session ended]\n");
       });
 
-      // Обрабатываем ошибки
+      
       terminalProcess.on("error", (error) => {
         console.error(`Terminal process error for user ${userId}:`, error);
         this.broadcastError(userId, `Terminal error: ${error.message}`);
@@ -121,13 +114,13 @@ export class VdsTerminal {
 
       this.terminalProcesses.set(userId, terminalProcess);
 
-      // Отправляем подтверждение подключения
+      
       ws.send(JSON.stringify({
         type: "vds_terminal_connected",
         message: "Terminal session started",
       }));
 
-      // Логируем использование VDS терминала
+      
       await storage.addActivity({
         type: "security_event",
         title: "VDS Terminal Access",
@@ -145,9 +138,7 @@ export class VdsTerminal {
     }
   }
 
-  /**
-   * Выполнить команду в VDS терминале
-   */
+  
   async executeCommand(userId: string, command: string, ws: WebSocket): Promise<void> {
     try {
       const user = await storage.getUser(userId);
@@ -159,7 +150,7 @@ export class VdsTerminal {
         return;
       }
 
-      // Проверяем права доступа (требуется kvm.access)
+      
       if (!user.permissions.includes("kvm.access")) {
         ws.send(JSON.stringify({
           type: "vds_terminal_error",
@@ -177,7 +168,7 @@ export class VdsTerminal {
         return;
       }
 
-      // Проверяем, что процесс еще жив
+      
       if (terminalProcess.killed || terminalProcess.exitCode !== null) {
         ws.send(JSON.stringify({
           type: "vds_terminal_error",
@@ -187,7 +178,7 @@ export class VdsTerminal {
         return;
       }
 
-      // Логируем выполнение команды
+      
       await storage.addActivity({
         type: "server_command",
         title: "VDS Terminal Command",
@@ -196,14 +187,14 @@ export class VdsTerminal {
         userId: user.id,
       }).catch(() => {});
 
-      // Отправляем команду в stdin терминала с правильной кодировкой
+      
       if (process.platform === "win32") {
         try {
-          // Кодируем команду в CP866 для Windows консоли
+          
           const encoded = (iconv as any).encode(command + "\n", "cp866");
           terminalProcess.stdin?.write(encoded);
         } catch (e) {
-          // Если не получилось закодировать, отправляем как UTF-8
+          
           terminalProcess.stdin?.write(command + "\n", "utf8");
         }
       } else {
@@ -219,16 +210,14 @@ export class VdsTerminal {
     }
   }
 
-  /**
-   * Отключиться от VDS терминала
-   */
+  
   disconnect(userId: string, ws: WebSocket): void {
-    // Удаляем клиента из подписчиков
+    
     const subscribers = this.terminalSubscribers.get(userId);
     if (subscribers) {
       subscribers.delete(ws);
       
-      // Если больше нет подписчиков, закрываем терминал
+      
       if (subscribers.size === 0) {
         const terminalProcess = this.terminalProcesses.get(userId);
         if (terminalProcess) {
@@ -240,9 +229,7 @@ export class VdsTerminal {
     }
   }
 
-  /**
-   * Отправить вывод всем подписанным клиентам
-   */
+  
   private broadcastOutput(userId: string, output: string): void {
     const subscribers = this.terminalSubscribers.get(userId);
     if (!subscribers) return;
@@ -257,9 +244,7 @@ export class VdsTerminal {
     });
   }
 
-  /**
-   * Отправить ошибку всем подписанным клиентам
-   */
+  
   private broadcastError(userId: string, message: string): void {
     const subscribers = this.terminalSubscribers.get(userId);
     if (!subscribers) return;

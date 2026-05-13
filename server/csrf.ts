@@ -1,12 +1,7 @@
-/**
- * CSRF защита для защиты от межсайтовых запросов
- */
 import { randomBytes } from "crypto";
 
-// Хранилище CSRF токенов (в production лучше использовать Redis)
 const csrfTokens = new Map<string, { token: string; expires: number }>();
 
-// Очистка истекших токенов каждые 5 минут
 setInterval(() => {
   const now = Date.now();
   for (const [key, value] of csrfTokens.entries()) {
@@ -16,9 +11,6 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000);
 
-/**
- * Генерировать CSRF токен для сессии
- */
 export function generateCSRFToken(sessionId: string): string {
   const token = randomBytes(32).toString("hex");
   // Токен действителен 24 часа
@@ -29,9 +21,6 @@ export function generateCSRFToken(sessionId: string): string {
   return token;
 }
 
-/**
- * Проверить CSRF токен
- */
 export function verifyCSRFToken(sessionId: string, token: string): boolean {
   const stored = csrfTokens.get(sessionId);
   if (!stored) {
@@ -46,16 +35,10 @@ export function verifyCSRFToken(sessionId: string, token: string): boolean {
   return stored.token === token;
 }
 
-/**
- * Удалить CSRF токен (при logout)
- */
 export function removeCSRFToken(sessionId: string): void {
   csrfTokens.delete(sessionId);
 }
 
-/**
- * Обновить срок действия токена
- */
 export function refreshCSRFToken(sessionId: string): void {
   const stored = csrfTokens.get(sessionId);
   if (stored) {

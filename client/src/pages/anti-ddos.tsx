@@ -58,6 +58,10 @@ export default function AntiDdosPage() {
 
   const { data: serverSettings, isLoading: serverLoading } = useQuery<DdosSettings>({
     queryKey: ["/api/ddos-settings/server", selectedServer],
+    queryFn: async () => {
+      const response = await apiRequest("GET", `/api/ddos-settings/server/${selectedServer}`);
+      return response.json();
+    },
     enabled: !!selectedServer,
   });
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -506,8 +506,8 @@ export default function ApiPage() {
                 <div className="space-y-2">
                   <h4 className="font-medium">Получить список серверов</h4>
                   <pre className="bg-muted p-4 rounded-md overflow-x-auto text-sm">
-{`GET /api/servers
-Authorization: X-API-Key: ваш_api_ключ`}
+{`curl -H "X-API-Key: ваш_api_ключ" \\
+  https://панель.домен/api/servers`}
                   </pre>
                 </div>
 

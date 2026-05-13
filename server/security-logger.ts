@@ -1,6 +1,3 @@
-/**
- * Система логирования безопасности для отслеживания подозрительных действий
- */
 import { storage } from "./storage";
 
 export interface SecurityEvent {
@@ -11,12 +8,10 @@ export interface SecurityEvent {
   timestamp: Date;
 }
 
-/**
- * Логировать событие безопасности
- */
+
 export async function logSecurityEvent(event: SecurityEvent): Promise<void> {
   try {
-    // Сохраняем в activity log
+    
     await storage.addActivity({
       type: "security_event",
       title: `Security Event: ${event.type}`,
@@ -25,17 +20,14 @@ export async function logSecurityEvent(event: SecurityEvent): Promise<void> {
       userId: event.userId,
     });
 
-    // Дополнительно логируем в консоль для мониторинга
+    
     console.warn(`[SECURITY] ${event.type} - IP: ${event.ip}${event.userId ? ` User: ${event.userId}` : ""} - ${event.details}`);
   } catch (error) {
-    // Не позволяем ошибкам логирования сломать приложение
+    
     console.error("Failed to log security event:", error);
   }
 }
 
-/**
- * Проверить подозрительность команды
- */
 export function isSuspiciousCommand(command: string): boolean {
   const suspiciousPatterns = [
     /rm\s+-rf/,           // Опасные удаления
@@ -66,9 +58,7 @@ export function isSuspiciousCommand(command: string): boolean {
   return suspiciousPatterns.some(pattern => pattern.test(lowerCommand));
 }
 
-/**
- * Проверить подозрительность пути к файлу
- */
+
 export function isSuspiciousPath(path: string): boolean {
   const suspiciousPatterns = [
     /\.\./,               // Path traversal
@@ -87,9 +77,7 @@ export function isSuspiciousPath(path: string): boolean {
   return suspiciousPatterns.some(pattern => pattern.test(path));
 }
 
-/**
- * Проверить опасные расширения файлов
- */
+
 export function isDangerousFileExtension(filename: string): boolean {
   const dangerousExtensions = [
     '.php', '.phtml', '.php3', '.php4', '.php5', '.phps',

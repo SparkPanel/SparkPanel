@@ -6,7 +6,7 @@ import { getRuntimeErrorOverlay, getCartographerPlugin, getDevBannerPlugin } fro
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Helper function to load development plugins conditionally
+
 async function loadDevPlugins() {
   if (process.env.NODE_ENV === "production" || process.env.DEV_ENV_ID === undefined) {
     return [];

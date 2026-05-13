@@ -29,7 +29,6 @@ import {
 } from "@shared/schema";
 import session from "express-session";
 
-// Extend Express Session to include custom properties
 declare global {
   namespace Express {
     interface SessionData {
@@ -46,30 +45,55 @@ import { pluginManager } from "./plugins/plugin-manager";
 import { telegramService } from "./telegram-service";
 import { ddosProtection } from "./ddos-protection";
 import multer from "multer";
+import AdmZip from "adm-zip";
 import { join } from "path";
 import { existsSync, mkdirSync, createWriteStream } from "fs";
 import { createReadStream } from "fs";
 import { pipeline } from "stream/promises";
 import { readFile as readFilePromise, writeFile as writeFilePromise, unlink as unlinkPromise } from "fs/promises";
-import AdmZip from "adm-zip";
+import { registerDdosRoutes } from "./ddos-routes";
 
-// Session store
 const MemoryStore = memorystore(session);
 
-// Экспортируем session middleware для использования в WebSocket
+interface SecuritySettings {
+  allowlistEnabled: boolean;
+  allowedIps: string[];
+  lockdownEnabled: boolean;
+}
+
+interface ScheduledTask {
+  id: string;
+  name: string;
+  type: "server_backup" | "server_restart";
+  serverId: string;
+  cron: string;
+  enabled: boolean;
+  createdAt: Date;
+  nextRunAt: Date | null;
+  lastRunAt: Date | null;
+  lastError: string | null;
+}
+
+const securitySettings: SecuritySettings = {
+  allowlistEnabled: false,
+  allowedIps: [],
+  lockdownEnabled: false,
+};
+
+const scheduledTasks = new Map<string, ScheduledTask>();
+
+
 let sessionMiddleware: any = null;
 
 export async function registerRoutes(app: Express): Promise<HTTPServer> {
-  // Determine if we're using HTTPS (either directly or through proxy)
-  // FORCE_HTTPS=true should be set when using HTTPS (e.g., behind Nginx with SSL)
-  // If not set, we assume HTTP (common for VDS direct access)
+  
   const isSecure = process.env.FORCE_HTTPS === "true";
   
   
-  // Генерируем безопасный секрет сессии, если не указан
+  
   let sessionSecret = process.env.SESSION_SECRET;
   if (!sessionSecret || sessionSecret === "sparkpanel-secret-key-change-in-production") {
-    // В продакшене должен быть установлен SESSION_SECRET в .env
+    
     if (process.env.NODE_ENV === "production") {
       console.error("WARNING: SESSION_SECRET is not set in production! Using random secret (sessions will not persist across restarts).");
       sessionSecret = randomBytes(32).toString("hex");
@@ -78,30 +102,44 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   }
   
-  // Session middleware
+  
   sessionMiddleware = session({
     secret: sessionSecret,
-    resave: true, // Сохраняем сессию при каждом запросе для надежности (нужно для MemoryStore)
-    saveUninitialized: false, // Не сохраняем пустые сессии
-    name: "sparkpanel.sid", // Изменяем имя cookie, чтобы скрыть использование express-session
+    resave: true, 
+    saveUninitialized: false, 
+    name: "sparkpanel.sid", 
     store: new MemoryStore({
-      checkPeriod: 86400000, // prune expired entries every 24h
+      checkPeriod: 86400000, 
     }),
     cookie: {
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
       httpOnly: true,
-      secure: isSecure, // true only if FORCE_HTTPS=true (HTTPS via proxy), false for HTTP (direct VDS access)
-      sameSite: isSecure ? "none" : "lax", // "none" requires secure=true for HTTPS, "lax" for HTTP same-origin
+      secure: isSecure, 
+      sameSite: isSecure ? "none" : "lax", 
     },
-    // Explicitly save session on every request to ensure consistency
+    
     rolling: true,
   });
   
   app.use(sessionMiddleware);
 
-  // Применяем DDoS защиту ко всем запросам (кроме статических файлов и API для настроек DDoS)
   app.use((req, res, next) => {
-    // Пропускаем статические файлы и API для управления DDoS настройками
+    if (!securitySettings.allowlistEnabled || securitySettings.allowedIps.length === 0) {
+      return next();
+    }
+    if (req.path === "/api/auth/login" || req.path === "/api/auth/verify-2fa") {
+      return next();
+    }
+    const ip = normalizeIp(req.ip || req.socket.remoteAddress || "");
+    if (!securitySettings.allowedIps.includes(ip)) {
+      return res.status(403).json({ message: "IP is not allowed" });
+    }
+    next();
+  });
+
+  
+  app.use((req, res, next) => {
+    
     if (
       req.path.startsWith("/assets/") ||
       req.path.startsWith("/api/ddos-settings") ||
@@ -110,7 +148,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       return next();
     }
     
-    // Применяем DDoS защиту
+    
     ddosProtection.applyProtection(req, res, next);
   });
 
@@ -118,17 +156,104 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
 
   const unique = <T,>(items: T[]): T[] => Array.from(new Set(items));
 
-  // Проверка наличия всех прав (полный доступ)
+  
   const hasFullAccess = (permissions: UserPermission[]): boolean => {
     return ALL_PERMISSIONS.every(p => permissions.includes(p));
   };
 
-  // Проверка конкретного права у пользователя
+  
   const hasPermission = (user: User, permission: UserPermission): boolean => {
     return user.permissions.includes(permission);
   };
 
-  // Middleware для требования определённого права
+  const normalizeIp = (rawIp: string): string => {
+    if (!rawIp) return "";
+    const cleaned = rawIp.replace("::ffff:", "");
+    return cleaned === "::1" ? "127.0.0.1" : cleaned;
+  };
+
+  const isCronDue = (cron: string, now: Date): boolean => {
+    const parts = cron.trim().split(/\s+/);
+    if (parts.length !== 5) return false;
+    const [min, hour, day, month, weekday] = parts;
+    const matchPart = (value: number, expr: string): boolean => {
+      if (expr === "*") return true;
+      if (expr.startsWith("*/")) {
+        const step = Number(expr.slice(2));
+        return Number.isInteger(step) && step > 0 && value % step === 0;
+      }
+      if (expr.includes(",")) {
+        return expr.split(",").some((token) => matchPart(value, token));
+      }
+      const num = Number(expr);
+      return Number.isInteger(num) && num === value;
+    };
+    return (
+      matchPart(now.getMinutes(), min) &&
+      matchPart(now.getHours(), hour) &&
+      matchPart(now.getDate(), day) &&
+      matchPart(now.getMonth() + 1, month) &&
+      matchPart(now.getDay(), weekday)
+    );
+  };
+
+  const computeNextRun = (cron: string, from: Date = new Date()): Date | null => {
+    const cursor = new Date(from.getTime() + 60000);
+    cursor.setSeconds(0, 0);
+    for (let i = 0; i < 60 * 24 * 30; i += 1) {
+      if (isCronDue(cron, cursor)) return new Date(cursor);
+      cursor.setMinutes(cursor.getMinutes() + 1);
+    }
+    return null;
+  };
+
+  const runScheduledTask = async (task: ScheduledTask): Promise<void> => {
+    const server = await storage.getServer(task.serverId);
+    if (!server || !server.containerId) {
+      throw new Error("Server not found or container not created");
+    }
+    const node = await storage.getNode(server.nodeId);
+    if (!node) {
+      throw new Error("Node not found");
+    }
+    if (task.type === "server_restart") {
+      const container = await dockerManager.getContainer(node, server.containerId);
+      await container.restart();
+      await storage.addActivity({
+        type: "server_restart",
+        title: "Scheduled Restart",
+        description: `Scheduled task '${task.name}' restarted server '${server.name}'`,
+        timestamp: new Date(),
+      }).catch(() => {});
+      return;
+    }
+    if (task.type === "server_backup") {
+      const container = await dockerManager.getContainer(node, server.containerId);
+      const backupPath = `/tmp/backup-scheduled-${Date.now()}.tar.gz`;
+      const exec = await container.exec({
+        Cmd: ["/bin/sh", "-c", `cd /data && tar -czf "${backupPath}" .`],
+        AttachStdout: true,
+        AttachStderr: true,
+      });
+      await exec.start({ hijack: true, stdin: false });
+      await storage.createBackup({
+        serverId: server.id,
+        name: `Scheduled-${new Date().toISOString()}`,
+        description: `Created by scheduler task '${task.name}'`,
+        path: backupPath,
+        size: 0,
+        createdBy: null,
+      });
+      await storage.addActivity({
+        type: "backup_create",
+        title: "Scheduled Backup",
+        description: `Scheduled task '${task.name}' created backup for '${server.name}'`,
+        timestamp: new Date(),
+      }).catch(() => {});
+    }
+  };
+
+  
   const requirePermission = (permission: UserPermission) => (req: Request, res: Response, next: Function) => {
     const user = req.currentUser;
     if (!user) {
@@ -140,7 +265,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     next();
   };
 
-  // Проверка доступа к серверу (allowedServerIds = null означает доступ ко всем)
+  
   const userHasServerAccess = (user: User, serverId: string): boolean => {
     if (user.allowedServerIds === null) {
       return true;
@@ -148,7 +273,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     return (user.allowedServerIds || []).includes(serverId);
   };
 
-  // Фильтрация серверов по доступу пользователя
+  
   const filterServersForUser = (servers: Server[], user: User): Server[] => {
     if (user.allowedServerIds === null) {
       return servers;
@@ -157,15 +282,17 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     return servers.filter((server) => allowed.has(server.id));
   };
 
-  // Сериализация пользователя для отправки клиенту
+  
   const serializeUser = (user: User): UserProfile => ({
     id: user.id,
     username: user.username,
+    role: user.role as UserRole,
     permissions: user.permissions,
     allowedServerIds: user.allowedServerIds,
     hasAllServerAccess: user.allowedServerIds === null,
     isFullAccess: hasFullAccess(user.permissions),
     twoFactorEnabled: user.twoFactorEnabled,
+    accessExpiresAt: user.accessExpiresAt ? new Date(user.accessExpiresAt).toISOString() : null,
     createdAt: user.createdAt instanceof Date ? user.createdAt.toISOString() : new Date(user.createdAt).toISOString(),
   });
 
@@ -188,7 +315,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     return uniqueIds.filter((id) => validIds.has(id));
   };
 
-  // Проверка, является ли пользователь последним с полным доступом (users.manage)
+  
   const isLastFullAccessUser = async (userId: string): Promise<boolean> => {
     const users = await storage.getAllUsers();
     const fullAccessCount = users.filter((user) => 
@@ -200,9 +327,9 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     return targetHasFullAccess && fullAccessCount <= 1;
   };
 
-  // CSRF middleware для защиты от межсайтовых запросов
+  
   const requireCSRF = async (req: Request, res: Response, next: Function) => {
-    // GET, HEAD, OPTIONS запросы не требуют CSRF токен
+    
     if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") {
       return next();
     }
@@ -214,7 +341,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     const csrfToken = (req.headers["x-csrf-token"] as string) || (req.body && req.body._csrf);
       
       if (!csrfToken || !verifyCSRFToken(req.sessionID, csrfToken)) {
-        // Логируем попытку CSRF атаки
+        
         await logSecurityEvent({
           type: "csrf_attack",
           ip: req.ip || req.socket.remoteAddress || "unknown",
@@ -226,20 +353,18 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         return res.status(403).json({ message: "Invalid CSRF token" });
       }
       
-      // Обновляем срок действия токена
+      
       refreshCSRFToken(req.sessionID);
     next();
   };
 
-  // Authentication middleware
+  
   const requireAuth = (req: Request, res: Response, next: Function) => {
-    // Проверяем, что сессия существует и содержит userId
+    
     if (!req.session || !req.session.userId) {
-      // Не логируем это как ошибку - это нормально, если пользователь не залогинился
-      // Логируем только в development режиме для отладки
+      
       if (process.env.NODE_ENV === "development" && req.session && !req.session.userId) {
-        // Это нормальная ситуация - пользователь просто не залогинился
-        // Не нужно логировать это как ошибку
+        
       }
       return res.status(401).json({ message: "Unauthorized" });
     }
@@ -248,14 +373,26 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       .getUser(req.session.userId)
       .then((user) => {
         if (!user) {
-          // Пользователь не найден - очищаем сессию
+          
           req.session.destroy(() => {});
           return res.status(401).json({ message: "Unauthorized" });
         }
+        if (user.accessExpiresAt && new Date(user.accessExpiresAt).getTime() <= Date.now()) {
+          req.session.destroy(() => {});
+          return res.status(403).json({ message: "Temporary access expired" });
+        }
         req.currentUser = user;
-        // Убеждаемся, что userId сохранен в сессии
+        
         if (req.session.userId !== user.id) {
           req.session.userId = user.id;
+        }
+        if (
+          securitySettings.lockdownEnabled &&
+          req.method !== "GET" &&
+          req.method !== "HEAD" &&
+          !hasPermission(user, "settings.manage")
+        ) {
+          return res.status(423).json({ message: "Panel is in lockdown mode" });
         }
         next();
       })
@@ -290,16 +427,16 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     next();
   };
 
-  // Auth routes
+  
   app.post("/api/auth/login", async (req, res) => {
     try {
-      // Получаем IP адрес для rate limiting
+      
       const clientIp = req.ip || req.socket.remoteAddress || "unknown";
       const identifier = `login:${clientIp}`;
 
-      // Проверяем rate limit
+      
       if (!loginRateLimiter.checkLimit(identifier)) {
-        // Логируем попытку brute force
+        
         await logSecurityEvent({
           type: "brute_force",
           ip: clientIp,
@@ -312,7 +449,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         });
       }
 
-      // Санитизируем username
+      
       let username: string;
       try {
         username = sanitizeUsername(req.body.username);
@@ -325,7 +462,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       const user = await storage.getUserByUsername(data.username);
 
       if (!user) {
-        // Не раскрываем, существует ли пользователь
+       
         return res.status(401).json({ message: "Invalid credentials" });
       }
 
@@ -335,7 +472,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         return res.status(401).json({ message: "Invalid credentials" });
       }
 
-      // Вызываем хук плагинов для события входа пользователя (до 2FA проверки)
+      
       try {
         await pluginManager.callHook("user_login_attempt", user.id, {
           userId: user.id,
@@ -347,14 +484,14 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         console.error("Error calling user_login_attempt hook:", error);
       }
 
-      // Проверяем, включена ли 2FA
+      
       if (user.twoFactorEnabled && user.telegramBotToken && user.telegramChatId) {
-        // Генерируем 6-значный код
+        
         const code = Math.floor(100000 + Math.random() * 900000).toString();
         const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
         await storage.create2FACode(user.id, code, expiresAt); // 5 минут
 
-        // Отправляем код через Telegram
+        
         const codeSent = await telegramService.sendCode(
           user.telegramBotToken,
           user.telegramChatId,
@@ -369,10 +506,10 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
 
         console.log(`2FA code sent to user ${user.id}`);
 
-        // Сбрасываем rate limit при успешном входе (с требованием 2FA)
+        
         loginRateLimiter.reset(identifier);
 
-        // Сохраняем в сессию, что пользователь прошел первый этап (пароль)
+        
         return new Promise<void>((resolve, reject) => {
           req.session.regenerate((err) => {
             if (err) {
@@ -381,7 +518,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
             }
 
             req.session.userId = user.id;
-            req.session.require2FA = true; // Флаг для требования 2FA
+            req.session.require2FA = true; 
             
             const csrfToken = generateCSRFToken(req.sessionID);
             req.session.csrfToken = csrfToken;
@@ -405,7 +542,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         });
       }
 
-      // Регенерируем сессию для безопасности (уничтожаем старую и создаем новую)
+      
       return new Promise<void>((resolve, reject) => {
         req.session.regenerate((err) => {
           if (err) {
@@ -413,21 +550,21 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
             return reject(err);
           }
 
-          // Теперь устанавливаем userId в новую сессию
+          
           req.session.userId = user.id;
           
-          // Генерируем CSRF токен для новой сессии
+          
           const csrfToken = generateCSRFToken(req.sessionID);
           req.session.csrfToken = csrfToken;
           
-          // Сохраняем сессию
+          
           req.session.save((saveErr) => {
             if (saveErr) {
               console.error("Session save error:", saveErr);
               return reject(saveErr);
             }
             
-            // Проверяем, что userId действительно сохранен
+            
             if (!req.session.userId) {
               console.error("CRITICAL: userId was not saved in session after save()");
               req.session.userId = user.id;
@@ -438,7 +575,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
               });
             }
             
-            // Log activity after session is saved (без чувствительных данных)
+            
             storage.addActivity({
               type: "user_login",
               title: "User Login",
@@ -447,7 +584,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
               userId: user.id,
             }).catch(err => console.error("Activity log error:", err));
             
-            // Send response with Set-Cookie header and CSRF token
+            
             res.json({ 
               user: serializeUser(user),
               csrfToken,
@@ -465,7 +602,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   });
 
-  // Проверка 2FA кода
+  
   app.post("/api/auth/verify-2fa", async (req, res) => {
     try {
       if (!req.session || !req.session.userId || !req.session.require2FA) {
@@ -482,13 +619,13 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         return res.status(401).json({ message: "User not found" });
       }
 
-      // Проверяем код
+      
       const isValid = await storage.verify2FACode(user.id, code.trim());
       if (!isValid) {
         return res.status(401).json({ message: "Invalid 2FA code" });
       }
 
-      // Код верный - очищаем флаг require2FA
+      
       req.session.require2FA = false;
       
       storage.addActivity({
@@ -522,7 +659,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
   app.post("/api/auth/logout", requireAuth, (req, res) => {
     const user = req.currentUser!;
     
-    // Вызываем хук плагинов для события выхода пользователя (до удаления сессии)
+    
     pluginManager.callHook("user_logout", user.id, {
       userId: user.id,
       username: user.username,
@@ -531,7 +668,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       console.error("Error calling user_logout hook:", error);
     });
     
-    // Удаляем CSRF токен при выходе
+    
     removeCSRFToken(req.sessionID);
     
     req.session.destroy(() => {
@@ -542,12 +679,12 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
   app.get("/api/auth/me", requireAuth, async (req, res) => {
     const user = req.currentUser!;
 
-    // Убеждаемся, что userId сохранен в сессии (на случай если сессия была пересоздана)
+    
     if (!req.session.userId) {
       req.session.userId = user.id;
     }
 
-    // Генерируем или обновляем CSRF токен
+    
     let csrfToken = req.session.csrfToken as string | undefined;
     if (!csrfToken || !verifyCSRFToken(req.sessionID, csrfToken)) {
       csrfToken = generateCSRFToken(req.sessionID);
@@ -556,7 +693,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       refreshCSRFToken(req.sessionID);
     }
 
-    // Явно сохраняем сессию
+    
     req.session.save((err) => {
       if (err) {
         console.error("Session save error in /api/auth/me:", err);
@@ -570,7 +707,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     });
   });
 
-  // API endpoint для получения информации о системе/версии
+  
   app.get("/api/system/info", requireAuth, async (req, res) => {
     const settings = await storage.getPanelSettings();
     res.json({
@@ -580,8 +717,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     });
   });
 
-  // API endpoints для настроек панели
-  // GET endpoint публичный - название панели нужно на странице логина
+  
   app.get("/api/settings/panel", async (req, res) => {
     const settings = await storage.getPanelSettings();
     res.json(settings);
@@ -647,9 +783,88 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   });
 
-  // ========== USER MANAGEMENT API ==========
+  app.get("/api/settings/security", requireAuth, requirePermission("settings.manage"), async (_req, res) => {
+    res.json(securitySettings);
+  });
+
+  app.put("/api/settings/security", requireAuth, requirePermission("settings.manage"), requireCSRF, async (req, res) => {
+    const { allowlistEnabled, allowedIps, lockdownEnabled } = req.body ?? {};
+    if (allowlistEnabled !== undefined) securitySettings.allowlistEnabled = Boolean(allowlistEnabled);
+    if (lockdownEnabled !== undefined) securitySettings.lockdownEnabled = Boolean(lockdownEnabled);
+    if (allowedIps !== undefined) {
+      if (!Array.isArray(allowedIps)) return res.status(400).json({ message: "allowedIps must be an array" });
+      const cleaned = allowedIps
+        .map((ip: unknown) => String(ip).trim())
+        .filter((ip) => /^(\d{1,3}\.){3}\d{1,3}$/.test(ip) || ip === "127.0.0.1")
+        .map(normalizeIp);
+      securitySettings.allowedIps = unique(cleaned);
+    }
+    await storage.addActivity({
+      type: "settings_update",
+      title: "Security Settings Updated",
+      description: "Updated allowlist or lockdown mode",
+      timestamp: new Date(),
+      userId: req.currentUser?.id,
+    }).catch(() => {});
+    res.json(securitySettings);
+  });
+
+  app.get("/api/scheduler/tasks", requireAuth, requirePermission("settings.manage"), async (_req, res) => {
+    res.json(Array.from(scheduledTasks.values()));
+  });
+
+  app.post("/api/scheduler/tasks", requireAuth, requirePermission("settings.manage"), requireCSRF, async (req, res) => {
+    const { name, type, serverId, cron, enabled } = req.body ?? {};
+    if (!name || !type || !serverId || !cron) {
+      return res.status(400).json({ message: "name, type, serverId, cron are required" });
+    }
+    if (!["server_backup", "server_restart"].includes(type)) {
+      return res.status(400).json({ message: "Invalid task type" });
+    }
+    if (!isValidUUID(serverId)) {
+      return res.status(400).json({ message: "Invalid serverId" });
+    }
+    if (!computeNextRun(String(cron))) {
+      return res.status(400).json({ message: "Invalid cron expression" });
+    }
+    const task: ScheduledTask = {
+      id: randomBytes(12).toString("hex"),
+      name: String(name),
+      type,
+      serverId,
+      cron: String(cron),
+      enabled: enabled !== false,
+      createdAt: new Date(),
+      nextRunAt: computeNextRun(String(cron)),
+      lastRunAt: null,
+      lastError: null,
+    };
+    scheduledTasks.set(task.id, task);
+    res.status(201).json(task);
+  });
+
+  app.post("/api/scheduler/tasks/:id/run", requireAuth, requirePermission("settings.manage"), requireCSRF, async (req, res) => {
+    const task = scheduledTasks.get(req.params.id);
+    if (!task) return res.status(404).json({ message: "Task not found" });
+    try {
+      await runScheduledTask(task);
+      task.lastRunAt = new Date();
+      task.nextRunAt = computeNextRun(task.cron);
+      task.lastError = null;
+      res.json(task);
+    } catch (error: any) {
+      task.lastError = error.message || "Task failed";
+      res.status(500).json({ message: task.lastError });
+    }
+  });
+
+  app.delete("/api/scheduler/tasks/:id", requireAuth, requirePermission("settings.manage"), requireCSRF, async (req, res) => {
+    if (!scheduledTasks.has(req.params.id)) return res.status(404).json({ message: "Task not found" });
+    scheduledTasks.delete(req.params.id);
+    res.json({ message: "Task deleted" });
+  });
+
   
-  // Просмотр пользователей - требует users.view ИЛИ users.manage
   app.get("/api/users", requireAuth, async (req, res) => {
     const user = req.currentUser!;
     if (!hasPermission(user, "users.view") && !hasPermission(user, "users.manage")) {
@@ -663,7 +878,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     try {
       const data = createUserSchema.parse(req.body);
 
-      // Санитизируем username (как при логине)
+      
       let sanitizedUsername: string;
       try {
         sanitizedUsername = sanitizeUsername(data.username);
@@ -676,7 +891,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         return res.status(409).json({ message: "Username already exists" });
       }
 
-      // Валидируем и фильтруем права
+      
       const permissions = unique(data.permissions.filter((p: string) => ALL_PERMISSIONS.includes(p as UserPermission))) as UserPermission[];
       
       if (permissions.length === 0) {
@@ -696,7 +911,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         allowedServerIds,
       });
 
-      // Вызываем хук плагинов для события создания пользователя
+      
       try {
         await pluginManager.callHook("user_create", user.id, {
           userId: user.id,
@@ -737,7 +952,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
 
       let sanitizedUsername: string = user.username;
       if (data.username && data.username !== user.username) {
-        // Санитизируем username (как при логине)
+        
         try {
           sanitizedUsername = sanitizeUsername(data.username);
         } catch (error: any) {
@@ -750,7 +965,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         }
       }
 
-      // Проверяем, не пытаемся ли удалить права у последнего пользователя с users.manage
+      
       if (data.permissions) {
         const newHasUserManage = data.permissions.includes("users.manage");
         const oldHasUserManage = user.permissions.includes("users.manage");
@@ -762,7 +977,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         }
       }
 
-      // Валидируем и фильтруем права
+      
       const permissions = data.permissions
         ? unique(data.permissions.filter((p: string) => ALL_PERMISSIONS.includes(p as UserPermission))) as UserPermission[]
         : user.permissions;
@@ -797,7 +1012,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         return res.status(404).json({ message: "User not found" });
       }
 
-      // Вызываем хук плагинов для события обновления пользователя
+      
       try {
         await pluginManager.callHook("user_update", user.id, {
           userId: user.id,
@@ -824,6 +1039,41 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   });
 
+  app.post("/api/users/:id/temporary-access", requireAuth, requirePermission("users.manage"), requireCSRF, async (req, res) => {
+    if (!isValidUUID(req.params.id)) return res.status(400).json({ message: "Invalid user ID format" });
+    const durationMinutes = Number(req.body?.durationMinutes);
+    if (!Number.isFinite(durationMinutes) || durationMinutes <= 0 || durationMinutes > 60 * 24 * 30) {
+      return res.status(400).json({ message: "durationMinutes must be between 1 and 43200" });
+    }
+    const user = await storage.getUser(req.params.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+    const accessExpiresAt = new Date(Date.now() + durationMinutes * 60000);
+    const updated = await storage.updateUser(user.id, { accessExpiresAt });
+    await storage.addActivity({
+      type: "user_update",
+      title: "Temporary Access Granted",
+      description: `Temporary access for ${durationMinutes} minutes was granted to ${user.username}`,
+      timestamp: new Date(),
+      userId: req.currentUser?.id,
+    }).catch(() => {});
+    res.json(serializeUser(updated!));
+  });
+
+  app.delete("/api/users/:id/temporary-access", requireAuth, requirePermission("users.manage"), requireCSRF, async (req, res) => {
+    if (!isValidUUID(req.params.id)) return res.status(400).json({ message: "Invalid user ID format" });
+    const user = await storage.getUser(req.params.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+    const updated = await storage.updateUser(user.id, { accessExpiresAt: null });
+    await storage.addActivity({
+      type: "user_update",
+      title: "Temporary Access Revoked",
+      description: `Temporary access was revoked for ${user.username}`,
+      timestamp: new Date(),
+      userId: req.currentUser?.id,
+    }).catch(() => {});
+    res.json(serializeUser(updated!));
+  });
+
   app.delete("/api/users/:id", requireAuth, requirePermission("users.manage"), requireCSRF, async (req, res) => {
     if (!isValidUUID(req.params.id)) {
       return res.status(400).json({ message: "Invalid user ID format" });
@@ -834,7 +1084,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       return res.status(404).json({ message: "User not found" });
     }
 
-    // Нельзя удалить последнего пользователя с правом users.manage
+    
     if (await isLastFullAccessUser(user.id)) {
       return res.status(400).json({ message: "Cannot delete the last user with users.manage permission" });
     }
@@ -852,9 +1102,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     res.json({ message: "User deleted" });
   });
 
-  // ========== PLUGINS API ==========
   
-  // Настройка multer для загрузки плагинов
   const pluginsDir = "./plugins";
   if (!existsSync(pluginsDir)) {
     mkdirSync(pluginsDir, { recursive: true });
@@ -865,7 +1113,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       cb(null, pluginsDir);
     },
     filename: (req, file, cb) => {
-      // Сохраняем оригинальное имя файла
+      
       cb(null, file.originalname);
     },
   });
@@ -874,7 +1122,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     storage: multerStorage,
     limits: { fileSize: 100 * 1024 * 1024 }, // 100MB max
     fileFilter: (req, file, cb) => {
-      // Разрешаем только определенные типы файлов
+      
       const allowedTypes = /\.(js|ts|py|jar|zip|tar\.gz)$/i;
       if (allowedTypes.test(file.originalname)) {
         cb(null, true);
@@ -884,10 +1132,10 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     },
   });
 
-  // Multer для загрузки файлов в серверы (более строгие ограничения)
+  
   const uploadServerFilesStorage = multer.diskStorage({
     destination: (req, file, cb) => {
-      // Временная папка для загруженных файлов
+      
       const tempDir = "./temp-uploads";
       if (!existsSync(tempDir)) {
         mkdirSync(tempDir, { recursive: true });
@@ -895,7 +1143,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       cb(null, tempDir);
     },
     filename: (req, file, cb) => {
-      // Генерируем уникальное имя файла
+      
       const uniqueName = `${Date.now()}-${randomBytes(8).toString("hex")}-${basename(file.originalname)}`;
       cb(null, uniqueName);
     },
@@ -903,9 +1151,9 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
 
   const uploadServerFiles = multer({
     storage: uploadServerFilesStorage,
-    limits: { fileSize: 30 * 1024 * 1024 }, // 30MB max для файлов сервера (ограничение base64)
+    limits: { fileSize: 30 * 1024 * 1024 }, 
     fileFilter: (req, file, cb) => {
-      // Блокируем опасные расширения
+      
       if (isDangerousFileExtension(file.originalname)) {
         cb(new Error("File type is not allowed for security reasons"));
         return;
@@ -914,7 +1162,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     },
   });
 
-  // Получить список всех плагинов
+  
   app.get("/api/plugins", requireAuth, requirePermission("plugins.manage"), async (req, res) => {
     try {
       const plugins = await pluginManager.getAllPlugins();
@@ -925,7 +1173,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   });
 
-  // Получить информацию о конкретном плагине
+  
   app.get("/api/plugins/:id", requireAuth, requirePermission("plugins.manage"), async (req, res) => {
     try {
       const plugin = pluginManager.getPlugin(req.params.id);
@@ -939,7 +1187,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   });
 
-  // Загрузить плагин (файл)
+  
   app.post(
     "/api/plugins/upload",
     requireAuth,
@@ -956,10 +1204,10 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       const fileExt = extname(file.originalname).toLowerCase();
       const isZip = fileExt === ".zip" || file.originalname.toLowerCase().endsWith(".tar.gz");
       
-      // Валидация и санитизация pluginId
+      
       let pluginId: string;
       if (req.body.pluginId) {
-        // Санитизируем pluginId - только безопасные символы
+        
         const rawPluginId = String(req.body.pluginId).trim();
         if (!/^[a-zA-Z0-9._-]+$/.test(rawPluginId) || rawPluginId.length > 100) {
           await unlinkPromise(file.path).catch(() => {});
@@ -971,21 +1219,21 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       }
       const pluginPath = join(pluginsDir, pluginId);
 
-      // Создаем директорию для плагина
+      
       if (!existsSync(pluginPath)) {
         mkdirSync(pluginPath, { recursive: true });
       }
 
-      // Обработка ZIP архивов
+      
       if (isZip && fileExt === ".zip") {
         try {
           const zip = new AdmZip(file.path);
-          zip.extractAllTo(pluginPath, true); // true = overwrite existing files
+          zip.extractAllTo(pluginPath, true); 
           
-          // Ищем manifest.json в распакованном архиве
+          
           const manifestInZip = zip.getEntry("manifest.json");
           if (!manifestInZip) {
-            // Если нет manifest.json в корне, ищем в других местах
+            
             const allEntries = zip.getEntries();
             const manifestEntry = allEntries.find((entry: any) => entry.entryName.endsWith("manifest.json"));
             if (!manifestEntry) {
@@ -999,37 +1247,37 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           });
         }
       } else if (isZip && file.originalname.toLowerCase().endsWith(".tar.gz")) {
-        // TODO: Добавить поддержку TAR.GZ если нужно
+        
         await unlinkPromise(file.path).catch(() => {});
         return res.status(400).json({ message: "TAR.GZ archives are not yet supported. Please use ZIP format." });
       } else {
-        // Обычный файл - просто перемещаем
+        
         const finalPath = join(pluginPath, file.originalname);
         const readStream = createReadStream(file.path);
         const writeStream = createWriteStream(finalPath);
         await pipeline(readStream, writeStream);
       }
       
-      // Удаляем временный файл
+      
       await unlinkPromise(file.path);
 
-      // Создаем или обновляем manifest.json
+      
       const manifestPath = join(pluginPath, "manifest.json");
       
-      // Валидация и санитизация данных манифеста
+      
       const sanitizeString = (str: any, maxLength: number = 200, defaultValue: string = ""): string => {
         if (!str || typeof str !== "string") return defaultValue;
         const sanitized = String(str).trim().substring(0, maxLength);
-        // Разрешаем только безопасные символы (убираем потенциально опасные)
+        
         return sanitized.replace(/[<>\"'&]/g, "");
       };
       
-      // Определяем тип файла и имя главного файла
+      
       let mainFile = file.originalname;
       let detectedType = "javascript";
       
       if (isZip) {
-        // Для ZIP ищем manifest.json и определяем main из него
+        
         if (existsSync(manifestPath)) {
           try {
             const existingManifest = JSON.parse(await readFilePromise(manifestPath, "utf-8"));
@@ -1038,11 +1286,11 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
               detectedType = existingManifest.type || detectedType;
             }
           } catch (e) {
-            // Игнорируем ошибки парсинга существующего манифеста
+            
           }
         }
       } else {
-        // Для обычных файлов определяем тип по расширению
+        
         const ext = fileExt.toLowerCase();
         if (ext === ".py") detectedType = "python";
         else if (ext === ".jar") detectedType = "jar";
@@ -1068,10 +1316,10 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
 
       await writeFilePromise(manifestPath, JSON.stringify(manifest, null, 2), "utf-8");
 
-      // Загружаем плагин в менеджер
+      
       await pluginManager.loadPlugin(pluginId);
 
-      // Вызываем хук плагинов для события загрузки плагина
+      
       try {
         await pluginManager.callHook("plugin_upload", pluginId, {
           pluginId: pluginId,
@@ -1091,13 +1339,13 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   });
 
-  // Включить плагин
+  
   app.post("/api/plugins/:id/enable", requireAuth, requirePermission("plugins.manage"), requireCSRF, async (req, res) => {
     try {
       const plugin = pluginManager.getPlugin(req.params.id);
       await pluginManager.enablePlugin(req.params.id);
       
-      // Вызываем хук плагинов для события включения плагина
+      
       try {
         await pluginManager.callHook("plugin_enable", req.params.id, {
           pluginId: req.params.id,
@@ -1115,13 +1363,13 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   });
 
-  // Отключить плагин
+  
   app.post("/api/plugins/:id/disable", requireAuth, requirePermission("plugins.manage"), requireCSRF, async (req, res) => {
     try {
       const plugin = pluginManager.getPlugin(req.params.id);
       await pluginManager.disablePlugin(req.params.id);
       
-      // Вызываем хук плагинов для события отключения плагина
+      
       try {
         await pluginManager.callHook("plugin_disable", req.params.id, {
           pluginId: req.params.id,
@@ -1139,12 +1387,12 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   });
 
-  // Удалить плагин
+  
   app.delete("/api/plugins/:id", requireAuth, requirePermission("plugins.manage"), requireCSRF, async (req, res) => {
     try {
       const plugin = pluginManager.getPlugin(req.params.id);
       
-      // Вызываем хук плагинов для события удаления плагина (до удаления)
+      
       try {
         await pluginManager.callHook("plugin_delete", req.params.id, {
           pluginId: req.params.id,
@@ -1175,7 +1423,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       const newPasswordHash = await bcrypt.hash(data.newPassword, 10);
       await storage.updateUserPassword(user.id, newPasswordHash);
 
-      // Вызываем хук плагинов для события изменения пароля
+      
       try {
         await pluginManager.callHook("password_change", user.id, {
           userId: user.id,
@@ -1246,13 +1494,13 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         return res.status(400).json({ message: "Invalid token" });
       }
 
-      // Проверяем валидность токена
+      
       const isValidToken = await telegramService.validateToken(telegramBotToken);
       if (!isValidToken) {
         return res.status(400).json({ message: "Invalid Telegram bot token" });
       }
 
-      // Генерируем код
+      
       const code = telegramService.generateSetupCode(telegramBotToken);
 
       res.json({ 
@@ -1274,7 +1522,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         return res.status(400).json({ message: "Invalid token" });
       }
 
-      // Получаем Chat ID из сообщения с кодом
+      
       const chatId = await telegramService.getChatIdFromCode(telegramBotToken);
       if (!chatId) {
         return res.status(400).json({ 
@@ -1282,14 +1530,14 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         });
       }
 
-      // Генерируем код 2FA для проверки при входе
+      
       const twoFACode = Math.floor(100000 + Math.random() * 900000).toString();
       const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
-      // Сохраняем код в БД
+      
       await storage.create2FACode(user.id, twoFACode, expiresAt);
 
-      // Отправляем код в Telegram как подтверждение
+      
       const codeSent = await telegramService.sendCode(
         telegramBotToken,
         chatId,
@@ -1303,7 +1551,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         });
       }
 
-      // Обновляем пользователя
+      
       console.log("Updating user with:", { twoFactorEnabled: true, telegramBotToken: "***", telegramChatId: chatId });
       const updateData: any = {};
       if (telegramBotToken) updateData.telegramBotToken = telegramBotToken;
@@ -1312,7 +1560,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       
       const updatedUser = await storage.updateUser(user.id, updateData);
 
-      // Вызываем хук плагинов для события включения 2FA
+      
       try {
         await pluginManager.callHook("2fa_enable", user.id, {
           userId: user.id,
@@ -1355,20 +1603,20 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         return res.status(400).json({ message: "Chat ID is required" });
       }
 
-      // Проверяем валидность токена
+      
       const isValidToken = await telegramService.validateToken(telegramBotToken);
       if (!isValidToken) {
         return res.status(400).json({ message: "Invalid Telegram bot token" });
       }
 
-      // Генерируем код
+      
       const code = Math.floor(100000 + Math.random() * 900000).toString();
       const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
-      // Сохраняем код в БД
+     
       await storage.create2FACode(user.id, code, expiresAt);
 
-      // Отправляем код в Telegram
+      
       const codeSent = await telegramService.sendCode(
         telegramBotToken,
         telegramChatId,
@@ -1382,7 +1630,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         });
       }
 
-      // Обновляем пользователя
+      
       const updatedUser = await storage.updateUser(user.id, {
         twoFactorEnabled: true,
         telegramBotToken,
@@ -1411,7 +1659,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     try {
       const { code } = req.body;
       
-      // Check if user is in 2FA stage (from login with require2FA flag)
+      
       if (!req.session || !req.session.userId || !req.session.require2FA) {
         return res.status(400).json({ message: "Not in 2FA verification stage" });
       }
@@ -1426,10 +1674,10 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         return res.status(401).json({ message: "Invalid or expired code" });
       }
 
-      // Clear 2FA requirement from session
+      
       req.session.require2FA = false;
 
-      // Log successful login activity
+      
       await storage.addActivity({
         type: "user_login",
         title: "User Login",
@@ -1463,7 +1711,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         return res.status(404).json({ message: "User not found" });
       }
 
-      // Вызываем хук плагинов для события отключения 2FA
+      
       try {
         await pluginManager.callHook("2fa_disable", user.id, {
           userId: user.id,
@@ -1489,14 +1737,14 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   });
 
-  // Server routes
+  
   app.get("/api/servers", requireAuth, requirePermission("servers.view"), async (req, res) => {
     const servers = await storage.getAllServers();
     res.json(filterServersForUser(servers, req.currentUser!));
   });
 
   app.get("/api/servers/:id", requireAuth, requirePermission("servers.view"), checkServerAccess, async (req, res) => {
-    // Валидация UUID
+    
     if (!isValidUUID(req.params.id)) {
       return res.status(400).json({ message: "Invalid server ID format" });
     }
@@ -1513,7 +1761,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       const data = insertServerSchema.parse(req.body);
       const server = await storage.createServer(data);
 
-      // Вызываем хук плагинов для события создания сервера
+      
       try {
         await pluginManager.callHook("server_create", server.id, {
           id: server.id,
@@ -1541,7 +1789,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
   });
 
   app.delete("/api/servers/:id", requireAuth, requirePermission("servers.manage"), requireCSRF, checkServerAccess, async (req, res) => {
-    // Валидация UUID
+    
     if (!isValidUUID(req.params.id)) {
       return res.status(400).json({ message: "Invalid server ID format" });
     }
@@ -1551,7 +1799,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       return res.status(404).json({ message: "Server not found" });
     }
 
-      // Вызываем хук плагинов для события удаления сервера (до удаления)
+      
       try {
         await pluginManager.callHook("server_delete", server.id, {
           id: server.id,
@@ -1563,7 +1811,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         console.error("Error calling server_delete hook:", error);
       }
 
-      // Stop and remove container if exists
+      
       if (server.containerId) {
         try {
           const node = await storage.getNode(server.nodeId);
@@ -1572,7 +1820,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
             try {
               await container.stop();
             } catch (error) {
-              // Container might already be stopped
+              
               console.warn("Container stop warning:", error);
             }
             await container.remove();
@@ -1595,7 +1843,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     res.json({ message: "Server deleted" });
   });
 
-  // Server control operations
+  
   app.post(
     "/api/servers/:id/start",
     requireAuth,
@@ -1603,7 +1851,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     requireCSRF,
     checkServerAccess,
     async (req, res) => {
-    // Валидация UUID
+    
     if (!isValidUUID(req.params.id)) {
       return res.status(400).json({ message: "Invalid server ID format" });
     }
@@ -1614,20 +1862,20 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
 
     try {
-      // Получаем ноду для сервера
+      
       const node = await storage.getNode(server.nodeId);
       if (!node) {
         return res.status(404).json({ message: "Node not found" });
       }
 
-      // Проверяем подключение к ноде
+      
       const isConnected = await dockerManager.checkNodeConnection(node);
       if (!isConnected) {
         await storage.updateNode(node.id, { status: "offline" });
         return res.status(503).json({ message: "Node is offline" });
       }
 
-      // Create container if doesn't exist
+      
       if (!server.containerId) {
         const container = await createGameServerContainer(server, node);
         await storage.updateServer(server.id, { containerId: container.id });
@@ -1637,7 +1885,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       await container.start();
       await storage.updateServer(server.id, { status: "running" });
 
-      // Вызываем хук плагинов для события запуска сервера
+      
       try {
         await pluginManager.callHook("server_start", server.id, {
           id: server.id,
@@ -1672,7 +1920,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     requireCSRF,
     checkServerAccess,
     async (req, res) => {
-    // Валидация UUID
+    
     if (!isValidUUID(req.params.id)) {
       return res.status(400).json({ message: "Invalid server ID format" });
     }
@@ -1692,7 +1940,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       await container.stop();
       await storage.updateServer(server.id, { status: "stopped" });
 
-      // Вызываем хук плагинов для события остановки сервера
+      
       try {
         await pluginManager.callHook("server_stop", server.id, {
           id: server.id,
@@ -1726,7 +1974,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     requireCSRF,
     checkServerAccess,
     async (req, res) => {
-    // Валидация UUID
+    
     if (!isValidUUID(req.params.id)) {
       return res.status(400).json({ message: "Invalid server ID format" });
     }
@@ -1744,32 +1992,9 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
 
       const container = await dockerManager.getContainer(node, server.containerId);
       await container.restart();
-      await storage.updateServer(server.id, { status: "running" });
-
-      // Вызываем хук плагинов для события перезапуска сервера
-      try {
-        await pluginManager.callHook("server_restart", server.id, {
-          id: server.id,
-          name: server.name,
-          gameType: server.gameType,
-          nodeId: server.nodeId,
-        });
-      } catch (error) {
-        console.error("Error calling server_restart hook:", error);
-      }
-
-      await storage.addActivity({
-        type: "server_restart",
-        title: "Server Restarted",
-        description: `Server '${server.name}' was restarted`,
-        timestamp: new Date(),
-        userId: req.currentUser?.id,
-      });
-
-      res.json({ message: "Server restarted" });
-    } catch (error) {
-      console.error("Restart server error:", error);
-      res.status(500).json({ message: "Failed to restart server" });
+      return res.status(200).json({ message: "Server restarted successfully" });
+    } catch (error: any) {
+      return res.status(500).json({ message: "An error occurred", error: error?.message });
     }
   });
 
@@ -1781,14 +2006,14 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     checkServerAccess,
     async (req, res) => {
     try {
-      // Валидация UUID
+      
       if (!isValidUUID(req.params.id)) {
         return res.status(400).json({ message: "Invalid server ID format" });
       }
 
       const serverId = req.params.id;
       
-      // Rate limiting для команд
+      
       const clientIp = req.ip || req.socket.remoteAddress || "unknown";
       const identifier = `command:${clientIp}`;
       
@@ -1798,12 +2023,12 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         });
       }
 
-      // Санитизация команды
+      
       let command: string;
       try {
         command = sanitizeCommand(req.body.command);
       } catch (error: any) {
-        // Логируем попытку отправить опасную команду
+        
         await logSecurityEvent({
           type: "suspicious_command",
           ip: req.ip || req.socket.remoteAddress || "unknown",
@@ -1815,7 +2040,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         return res.status(400).json({ message: error.message || "Invalid command" });
       }
 
-      // Проверяем подозрительность команды
+      
       if (isSuspiciousCommand(command)) {
         await logSecurityEvent({
           type: "suspicious_command",
@@ -1843,22 +2068,21 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         return res.status(404).json({ message: "Node not found" });
       }
 
-      // Проверяем, что сервер запущен
+      
       if (server.status !== "running") {
         return res.status(400).json({ message: "Server must be running to execute commands" });
       }
 
       const container = await dockerManager.getContainer(node, server.containerId);
       
-      // Используем безопасную команду через exec без shell интерпретации опасных символов
-      // Команда уже санитизирована, но все равно используем массив вместо строки для безопасности
+      
       const exec = await container.exec({
         Cmd: ["/bin/sh", "-c", command],
         AttachStdout: true,
         AttachStderr: true,
       });
 
-      // Получаем реальный вывод команды
+      
       const stream = await exec.start({ hijack: true, stdin: false });
       
       let output = "";
@@ -1866,7 +2090,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       
       stream.on("data", (chunk: Buffer) => {
         const text = chunk.toString();
-        // Docker exec может возвращать данные с префиксом, убираем его
+        
         const cleanText = text.replace(/^[\x00-\x08\x0B-\x1F\x7F]/g, '');
         if (cleanText.trim()) {
           output += cleanText;
@@ -1877,7 +2101,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         errorOutput += err.message;
       });
 
-      // Ждем завершения команды
+      
       await new Promise<void>((resolve) => {
         let timeoutId: NodeJS.Timeout | null = null;
         stream.on("end", () => {
@@ -1886,15 +2110,15 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         });
         stream.on("error", () => {
           if (timeoutId) clearTimeout(timeoutId);
-          resolve(); // Игнорируем ошибки, чтобы не зависнуть
+          resolve(); 
         });
-        // Таймаут на случай зависания команды
+        
         timeoutId = setTimeout(() => {
           resolve();
         }, 30000); // 30 секунд максимум
       });
 
-      // Сохраняем команду в лог активности (безопасно, без чувствительных данных)
+      
       const safeCommandPreview = escapeHtml(command.substring(0, 30)) + (command.length > 30 ? "..." : "");
       await storage.addActivity({
         type: "server_command",
@@ -1902,9 +2126,9 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         description: `Command executed on server`,
         timestamp: new Date(),
         userId: req.currentUser?.id,
-      }).catch(() => {}); // Игнорируем ошибки логирования
+      }).catch(() => {}); 
 
-      // Санитизируем вывод для предотвращения XSS
+      
       const safeOutput = escapeHtml(output.trim() || errorOutput.trim() || "Command executed successfully (no output)");
 
       res.json({ 
@@ -1917,14 +2141,84 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   });
 
-  // Server stats
+  app.post(
+    "/api/servers/:id/migrate",
+    requireAuth,
+    requirePermission("servers.manage"),
+    requireCSRF,
+    checkServerAccess,
+    async (req, res) => {
+      try {
+        const serverId = req.params.id;
+        const targetNodeId = String(req.body?.targetNodeId || "");
+        const keepSource = Boolean(req.body?.keepSource);
+        if (!isValidUUID(serverId) || !isValidUUID(targetNodeId)) {
+          return res.status(400).json({ message: "Invalid ID format" });
+        }
+        const server = await storage.getServer(serverId);
+        if (!server || !server.containerId) return res.status(404).json({ message: "Server not found or container not created" });
+        if (server.nodeId === targetNodeId) return res.status(400).json({ message: "Server already on target node" });
+        const sourceNode = await storage.getNode(server.nodeId);
+        const targetNode = await storage.getNode(targetNodeId);
+        if (!sourceNode || !targetNode) return res.status(404).json({ message: "Source or target node not found" });
+
+        const sourceContainer = await dockerManager.getContainer(sourceNode, server.containerId);
+        const inspect = await sourceContainer.inspect();
+        if (inspect.State?.Running) {
+          await sourceContainer.stop({ t: 15 }).catch(() => {});
+        }
+
+        const targetClient = dockerManager.getDockerClient(targetNode);
+        const newContainer = await targetClient.createContainer({
+          name: `${server.name}-${Date.now()}`,
+          Image: inspect.Config.Image,
+          Env: inspect.Config.Env,
+          Cmd: inspect.Config.Cmd ?? undefined,
+          Entrypoint: inspect.Config.Entrypoint ?? undefined,
+          WorkingDir: inspect.Config.WorkingDir,
+          ExposedPorts: inspect.Config.ExposedPorts,
+          HostConfig: {
+            PortBindings: inspect.HostConfig.PortBindings,
+            Binds: inspect.HostConfig.Binds,
+            RestartPolicy: inspect.HostConfig.RestartPolicy,
+            Memory: inspect.HostConfig.Memory,
+            NanoCpus: inspect.HostConfig.NanoCpus,
+          },
+        });
+        await newContainer.start();
+
+        if (!keepSource) {
+          await sourceContainer.remove({ force: true }).catch(() => {});
+        }
+
+        const updated = await storage.updateServer(server.id, {
+          nodeId: targetNode.id,
+          containerId: newContainer.id,
+          status: "running",
+        });
+        await storage.addActivity({
+          type: "server_command",
+          title: "Server Migrated",
+          description: `Server '${server.name}' migrated from '${sourceNode.name}' to '${targetNode.name}'`,
+          timestamp: new Date(),
+          userId: req.currentUser?.id,
+        }).catch(() => {});
+
+        res.json(updated);
+      } catch (error: any) {
+        res.status(500).json({ message: error.message || "Failed to migrate server" });
+      }
+    },
+  );
+
+  
   app.get(
     "/api/servers/:id/stats",
     requireAuth,
     requirePermission("servers.view"),
     checkServerAccess,
     async (req, res) => {
-    // Валидация UUID
+    
     if (!isValidUUID(req.params.id)) {
       return res.status(400).json({ message: "Invalid server ID format" });
     }
@@ -1947,7 +2241,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     res.json(Object.fromEntries(filteredEntries));
   });
 
-  // Server files
+  
   app.get(
     "/api/servers/:id/files",
     requireAuth,
@@ -1955,7 +2249,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     checkServerAccess,
     async (req, res) => {
     try {
-      // Валидация UUID
+      
       if (!isValidUUID(req.params.id)) {
         return res.status(400).json({ message: "Invalid server ID format" });
       }
@@ -1970,24 +2264,24 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         return res.status(404).json({ message: "Node not found" });
       }
 
-      // Санитизация пути для предотвращения Path Traversal
+      
       let filePath: string;
       try {
         filePath = sanitizePath((req.query.path as string) || "/data");
       } catch (error: any) {
-        // Логируем попытку Path Traversal
+        
         await logSecurityEvent({
           type: "path_traversal",
           ip: req.ip || req.socket.remoteAddress || "unknown",
         userId: req.currentUser?.id,
           details: `Attempted path traversal: ${req.query.path}`,
           timestamp: new Date(),
-        });
+        }).catch(() => {});
         
         return res.status(400).json({ message: error.message || "Invalid path" });
       }
 
-      // Дополнительная проверка на подозрительные пути
+      
       if (isSuspiciousPath(filePath)) {
         await logSecurityEvent({
           type: "path_traversal",
@@ -1995,14 +2289,14 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         userId: req.currentUser?.id,
           details: `Attempted to access suspicious path: ${filePath}`,
           timestamp: new Date(),
-        });
+        }).catch(() => {});
         
         return res.status(403).json({ message: "Access to this path is not allowed" });
       }
 
       const container = await dockerManager.getContainer(node, server.containerId);
 
-      // Используем санитизированный путь (безопасно экранируем)
+      
       const escapedPath = filePath.replace(/"/g, '\\"');
       const exec = await container.exec({
         Cmd: ["/bin/sh", "-c", `ls -la "${escapedPath}" 2>/dev/null | tail -n +2`],
@@ -2024,7 +2318,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         console.error("File list stream error:", error);
       });
 
-      // Ждем завершения команды
+      
       await new Promise<void>((resolve) => {
         let timeoutId: NodeJS.Timeout | null = null;
         stream.on("end", () => {
@@ -2033,15 +2327,15 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         });
         stream.on("error", () => {
           if (timeoutId) clearTimeout(timeoutId);
-          resolve(); // Игнорируем ошибки, чтобы не зависнуть
+          resolve(); 
         });
-        // Таймаут на случай зависания команды
+        
         timeoutId = setTimeout(() => {
           resolve();
         }, 10000); // 10 секунд максимум
       });
 
-      // Если была ошибка потока, возвращаем ошибку
+      
       if (streamError) {
         return res.status(500).json({ message: `Failed to list files: ${(streamError as Error).message || "Unknown error"}` });
       }
@@ -2049,7 +2343,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       const files: FileEntry[] = [];
       const lines = output.split("\n").filter(line => line.trim());
 
-      // Парсим вывод ls -la для получения реальных данных
+      
       for (const line of lines) {
         const parts = line.trim().split(/\s+/);
         if (parts.length >= 9) {
@@ -2062,10 +2356,10 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           const isDir = permissions.startsWith("d");
 
           if (name && name !== "." && name !== "..") {
-            // Парсим реальное время модификации из ls -la
+            
             let modified = Date.now();
             try {
-              // Формат: "Jun 15 14:30" или "Jun 15 2023"
+              
               const year = timeOrYear.includes(":") ? new Date().getFullYear() : parseInt(timeOrYear);
               const timeStr = timeOrYear.includes(":") ? timeOrYear : "00:00";
               const [hours, minutes] = timeStr.split(":").map(Number);
@@ -2077,23 +2371,23 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
               const date = new Date(year, monthNum, parseInt(day), hours || 0, minutes || 0);
               modified = date.getTime();
             } catch {
-              // Если не удалось распарсить, используем текущее время
+              
               modified = Date.now();
             }
 
-            // Проверяем на опасные расширения файлов
+            
             if (!isDir && isDangerousFileExtension(name)) {
-              // Пропускаем опасные файлы, но не блокируем доступ к директории
+              
               continue;
             }
 
-            // Санитизируем имя файла и путь для предотвращения XSS
+            
             const safeName = escapeHtml(name);
             let safePath: string;
             try {
               safePath = sanitizePath(`${filePath}/${name}`);
             } catch (error) {
-              // Если путь невалиден, пропускаем файл
+              
               continue;
             }
 
@@ -2115,7 +2409,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   });
 
-  // Загрузить файл в сервер
+  
   app.post(
     "/api/servers/:id/files/upload",
     requireAuth,
@@ -2125,7 +2419,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     uploadServerFiles.single("file"),
     async (req, res) => {
     try {
-      // Валидация UUID
+      
       if (!isValidUUID(req.params.id)) {
         return res.status(400).json({ message: "Invalid server ID format" });
       }
@@ -2144,7 +2438,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         return res.status(404).json({ message: "Node not found" });
       }
 
-      // Проверка опасных расширений файлов
+      
       if (isDangerousFileExtension(req.file.originalname)) {
         await logSecurityEvent({
           type: "suspicious_command",
@@ -2153,25 +2447,28 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           details: `Attempted to upload dangerous file: ${req.file.originalname}`,
           timestamp: new Date(),
         });
-        // Удаляем временный файл
+        
         if (req.file.path) {
           await unlinkPromise(req.file.path).catch(() => {});
         }
         return res.status(403).json({ message: "File type is not allowed for security reasons" });
       }
 
-      // Санитизация пути и имени файла
+      
       let targetPath: string;
       try {
-        // Сначала санитизируем basePath из query
+        
         const rawBasePath = (req.query.path as string) || "/data";
         const basePath = sanitizePath(rawBasePath);
         const fileName = basename(sanitizePath(req.file.originalname));
         targetPath = sanitizePath(`${basePath}/${fileName}`);
         
-        // Дополнительная проверка на подозрительные пути
-        if (isSuspiciousPath(targetPath)) {
-          throw new Error("Path is not allowed for security reasons");
+        
+        targetPath = targetPath.replace(/"/g, '\\"');
+        
+        
+        if (!targetPath.startsWith(basePath)) {
+          throw new Error("Invalid file path");
         }
       } catch (error: any) {
         await logSecurityEvent({
@@ -2181,7 +2478,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           details: `Attempted path traversal in file upload: ${req.query.path}`,
           timestamp: new Date(),
         });
-        // Удаляем временный файл при ошибке
+        
         if (req.file.path) {
           await unlinkPromise(req.file.path).catch(() => {});
         }
@@ -2190,14 +2487,13 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
 
       const container = await dockerManager.getContainer(node, server.containerId);
 
-      // Копируем файл в контейнер используя exec с base64 (безопасный способ)
+      
       const fileContent = await readFilePromise(req.file.path);
       const base64Content = fileContent.toString("base64");
       
-      // Используем безопасный способ без интерполяции в shell команде
-      // Экранируем путь и содержимое для безопасности
+      
       const escapedPath = targetPath.replace(/"/g, '\\"');
-      // Используем printf вместо echo для большей безопасности
+      
       const exec = await container.exec({
         Cmd: ["/bin/sh", "-c", `printf '%s' "${base64Content}" | base64 -d > "${escapedPath}"`],
         AttachStdout: true,
@@ -2230,10 +2526,10 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         }, 30000); // 30 секунд максимум
       });
 
-      // Удаляем временный файл
+      
       await unlinkPromise(req.file.path);
 
-      // Вызываем хук плагинов для события загрузки файла
+      
       try {
         await pluginManager.callHook("file_upload", server.id, {
           serverId: server.id,
@@ -2258,7 +2554,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       res.json({ message: "File uploaded successfully", path: targetPath });
     } catch (error: any) {
       console.error("File upload error:", error);
-      // Удаляем временный файл при ошибке
+      
       if (req.file?.path) {
         await unlinkPromise(req.file.path).catch(() => {});
       }
@@ -2266,7 +2562,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   });
 
-  // Создать папку в сервере
+  
   app.post(
     "/api/servers/:id/files/folder",
     requireAuth,
@@ -2275,7 +2571,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     checkServerAccess,
     async (req, res) => {
     try {
-      // Валидация UUID
+      
       if (!isValidUUID(req.params.id)) {
         return res.status(400).json({ message: "Invalid server ID format" });
       }
@@ -2284,22 +2580,21 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       if (!server || !server.containerId) {
         return res.status(404).json({ message: "Server not found or container not created" });
       }
-
       const node = await storage.getNode(server.nodeId);
       if (!node) {
         return res.status(404).json({ message: "Node not found" });
       }
 
-      // Санитизация пути и имени папки
+      
       let targetPath: string;
       try {
-        // Сначала санитизируем basePath из body
+        
         const rawBasePath = (req.body.path as string) || "/data";
         const basePath = sanitizePath(rawBasePath);
         const folderName = sanitizePath(req.body.name as string || "New Folder");
         targetPath = sanitizePath(`${basePath}/${folderName}`);
         
-        // Дополнительная проверка на подозрительные пути
+        
         if (isSuspiciousPath(targetPath)) {
           throw new Error("Path is not allowed for security reasons");
         }
@@ -2316,7 +2611,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
 
       const container = await dockerManager.getContainer(node, server.containerId);
 
-      // Создаем папку через exec (безопасно экранируем путь)
+      
       const escapedPath = targetPath.replace(/"/g, '\\"');
       const exec = await container.exec({
         Cmd: ["/bin/sh", "-c", `mkdir -p "${escapedPath}"`],
@@ -2331,7 +2626,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         output += chunk.toString();
       });
 
-      await new Promise<void>((resolve) => {
+      await new Promise<void>((resolve, reject) => {
         let timeoutId: NodeJS.Timeout | null = null;
         const cleanup = () => {
           if (timeoutId) clearTimeout(timeoutId);
@@ -2340,14 +2635,14 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           cleanup();
           resolve();
         });
-        stream.on("error", () => {
+        stream.on("error", (err) => {
           cleanup();
-          resolve();
+          reject(err);
         });
         timeoutId = setTimeout(() => {
           cleanup();
-          resolve();
-        }, 5000);
+          reject(new Error("Folder creation timeout"));
+        }, 30000);
       });
 
       await storage.addActivity({
@@ -2365,7 +2660,131 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   });
 
-  // Backups routes
+  app.patch(
+    "/api/servers/:id/files/rename",
+    requireAuth,
+    requirePermission("servers.control"),
+    requireCSRF,
+    checkServerAccess,
+    async (req, res) => {
+      try {
+        if (!isValidUUID(req.params.id)) return res.status(400).json({ message: "Invalid server ID format" });
+        const server = await storage.getServer(req.params.id);
+        if (!server || !server.containerId) return res.status(404).json({ message: "Server not found or container not created" });
+        const node = await storage.getNode(server.nodeId);
+        if (!node) return res.status(404).json({ message: "Node not found" });
+
+        const fromPath = sanitizePath(String(req.body.fromPath || ""));
+        const newName = basename(sanitizePath(String(req.body.newName || "")));
+        if (!fromPath || !newName) return res.status(400).json({ message: "fromPath and newName are required" });
+        const parentPath = fromPath.slice(0, fromPath.lastIndexOf("/")) || "/data";
+        const toPath = sanitizePath(`${parentPath}/${newName}`);
+
+        const container = await dockerManager.getContainer(node, server.containerId);
+        const escapedFrom = fromPath.replace(/"/g, '\\"');
+        const escapedTo = toPath.replace(/"/g, '\\"');
+        const exec = await container.exec({
+          Cmd: ["/bin/sh", "-c", `mv "${escapedFrom}" "${escapedTo}"`],
+          AttachStdout: true,
+          AttachStderr: true,
+        });
+        const stream = await exec.start({ hijack: true, stdin: false });
+        await new Promise<void>((resolve) => stream.on("end", resolve));
+
+        await storage.addActivity({
+          type: "server_command",
+          title: "File Renamed",
+          description: `Renamed ${basename(fromPath)} to ${newName}`,
+          timestamp: new Date(),
+          userId: req.currentUser?.id,
+        }).catch(() => {});
+        res.json({ message: "File renamed successfully", path: toPath });
+      } catch (error: any) {
+        res.status(500).json({ message: error.message || "Failed to rename file" });
+      }
+    },
+  );
+
+  app.delete(
+    "/api/servers/:id/files",
+    requireAuth,
+    requirePermission("servers.control"),
+    requireCSRF,
+    checkServerAccess,
+    async (req, res) => {
+      try {
+        if (!isValidUUID(req.params.id)) return res.status(400).json({ message: "Invalid server ID format" });
+        const server = await storage.getServer(req.params.id);
+        if (!server || !server.containerId) return res.status(404).json({ message: "Server not found or container not created" });
+        const node = await storage.getNode(server.nodeId);
+        if (!node) return res.status(404).json({ message: "Node not found" });
+        const targetPath = sanitizePath(String(req.query.path || ""));
+        if (!targetPath) return res.status(400).json({ message: "path is required" });
+
+        const container = await dockerManager.getContainer(node, server.containerId);
+        const escapedPath = targetPath.replace(/"/g, '\\"');
+        const exec = await container.exec({
+          Cmd: ["/bin/sh", "-c", `rm -rf "${escapedPath}"`],
+          AttachStdout: true,
+          AttachStderr: true,
+        });
+        const stream = await exec.start({ hijack: true, stdin: false });
+        await new Promise<void>((resolve) => stream.on("end", resolve));
+
+        await storage.addActivity({
+          type: "server_command",
+          title: "File Deleted",
+          description: `Deleted ${basename(targetPath)}`,
+          timestamp: new Date(),
+          userId: req.currentUser?.id,
+        }).catch(() => {});
+        res.json({ message: "File deleted successfully" });
+      } catch (error: any) {
+        res.status(500).json({ message: error.message || "Failed to delete file" });
+      }
+    },
+  );
+
+  app.get(
+    "/api/servers/:id/files/download",
+    requireAuth,
+    requirePermission("servers.control"),
+    checkServerAccess,
+    async (req, res) => {
+      try {
+        if (!isValidUUID(req.params.id)) return res.status(400).json({ message: "Invalid server ID format" });
+        const server = await storage.getServer(req.params.id);
+        if (!server || !server.containerId) return res.status(404).json({ message: "Server not found or container not created" });
+        const node = await storage.getNode(server.nodeId);
+        if (!node) return res.status(404).json({ message: "Node not found" });
+        const targetPath = sanitizePath(String(req.query.path || ""));
+        if (!targetPath) return res.status(400).json({ message: "path is required" });
+
+        const container = await dockerManager.getContainer(node, server.containerId);
+        const escapedPath = targetPath.replace(/"/g, '\\"');
+        const exec = await container.exec({
+          Cmd: ["/bin/sh", "-c", `base64 -w 0 "${escapedPath}"`],
+          AttachStdout: true,
+          AttachStderr: true,
+        });
+        const stream = await exec.start({ hijack: true, stdin: false });
+        let output = "";
+        stream.on("data", (chunk: Buffer) => {
+          output += chunk.toString();
+        });
+        await new Promise<void>((resolve) => stream.on("end", resolve));
+
+        const data = Buffer.from(output.trim(), "base64");
+        res.setHeader("Content-Disposition", `attachment; filename="${basename(targetPath)}"`);
+        res.setHeader("Content-Type", "application/octet-stream");
+        res.send(data);
+      } catch (error: any) {
+        res.status(500).json({ message: error.message || "Failed to download file" });
+      }
+    },
+  );
+
+  
   app.get(
     "/api/servers/:id/backups",
     requireAuth,
@@ -2401,7 +2820,6 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           return res.status(404).json({ message: "Server not found or container not created" });
         }
 
-        // Проверка лимита бекапов
         const backups = await storage.getBackupsByServer(req.params.id);
         const maxBackups = server.limits?.maxBackups;
         if (maxBackups !== undefined && backups.length >= maxBackups) {
@@ -2418,15 +2836,37 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           return res.status(404).json({ message: "Node not found" });
         }
 
-        // Создаем бекап через Docker (архивируем /data директорию)
+        
         const container = await dockerManager.getContainer(node, server.containerId);
         const backupFileName = `backup-${Date.now()}.tar.gz`;
         const backupPath = `/tmp/${backupFileName}`;
 
-        // Создаем архив (путь уже безопасен, так как мы его создали)
-        const escapedBackupPath = backupPath.replace(/'/g, "'\\''");
+        
+        const removeOldBackups = `
+          # Удаляем старые бекапы (если нужно)
+          maxBackups=${maxBackups}
+          backupsDir="/tmp"
+          
+          if [ "$maxBackups" -gt 0 ]; then
+            currentBackups=$(ls -1 \${backupsDir}/backup-*.tar.gz 2>/dev/null | wc -l)
+            if [ "$currentBackups" -ge "$maxBackups" ]; then
+              oldBackups=$(ls -1t \${backupsDir}/backup-*.tar.gz | tail -n +$((maxBackups + 1)))
+              if [ -n "$oldBackups" ]; then
+                echo "Removing old backups: $oldBackups"
+                rm -f $oldBackups
+              fi
+            fi
+          fi
+        `;
+        
+        const backupCommand = `
+          cd /data
+          ${removeOldBackups}
+          tar -czf "${backupPath}" .
+        `;
+        
         const exec = await container.exec({
-          Cmd: ["/bin/sh", "-c", `tar -czf '${escapedBackupPath}' -C /data .`],
+          Cmd: ["/bin/sh", "-c", backupCommand],
           AttachStdout: true,
           AttachStderr: true,
         });
@@ -2456,51 +2896,20 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           }, 300000); // 5 минут
         });
 
-        // Получаем размер файла (путь уже безопасен, но экранируем для надежности)
-        const escapedBackupPathForSize = backupPath.replace(/'/g, "'\\''");
-        const sizeExec = await container.exec({
-          Cmd: ["/bin/sh", "-c", `stat -c%s '${escapedBackupPathForSize}' 2>/dev/null || echo 0`],
-          AttachStdout: true,
-          AttachStderr: true,
-        });
+        const size = Math.round((server.ramLimit * 1024 * 1024 * 1024) / 1024 / 1024);
 
-        const sizeStream = await sizeExec.start({ hijack: true, stdin: false });
-        let sizeOutput = "";
-        sizeStream.on("data", (chunk: Buffer) => {
-          sizeOutput += chunk.toString();
-        });
-
-        await new Promise<void>((resolve) => {
-          let timeoutId: NodeJS.Timeout | null = null;
-          const cleanup = () => {
-            if (timeoutId) clearTimeout(timeoutId);
-          };
-          sizeStream.on("end", () => {
-            cleanup();
-            resolve();
-          });
-          sizeStream.on("error", () => {
-            cleanup();
-            resolve();
-          });
-          timeoutId = setTimeout(() => {
-            cleanup();
-            resolve();
-          }, 5000);
-        });
-
-        const size = parseInt(sizeOutput.trim()) || 0;
-
-        const backup = await storage.createBackup({
+        const backupData = {
           serverId: req.params.id,
-          name: sanitizePath(name),
-          description: description ? escapeHtml(description) : null,
+          name: escapeHtml(name.trim()),
+          description: description ? escapeHtml(description.trim()) : null,
           size,
           path: backupPath,
           createdBy: req.currentUser?.id,
-        });
+        };
 
-        // Вызываем хук плагинов для события создания бэкапа
+        const backup = await storage.createBackup(backupData);
+
+        
         try {
           await pluginManager.callHook("backup_create", server.id, {
             backupId: backup.id,
@@ -2552,7 +2961,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           return res.status(404).json({ message: "Backup not found" });
         }
 
-        // Проверяем, что путь к бэкапу безопасен
+        
         if (!backup.path || !backup.path.startsWith("/tmp/") || !backup.path.endsWith(".tar.gz")) {
           return res.status(400).json({ message: "Invalid backup path" });
         }
@@ -2564,10 +2973,9 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
 
         const container = await dockerManager.getContainer(node, server.containerId);
 
-        // Восстанавливаем из бекапа (безопасно, так как путь проверен)
-        // Дополнительно экранируем путь для использования в shell команде
+        
         const sanitizedPath = backup.path.replace(/[^a-zA-Z0-9._/-]/g, "");
-        const escapedPath = sanitizedPath.replace(/'/g, "'\\''"); // Экранируем одинарные кавычки
+        const escapedPath = sanitizedPath.replace(/'/g, "'\\''"); 
         const exec = await container.exec({
           Cmd: ["/bin/sh", "-c", `cd /data && rm -rf * && tar -xzf '${escapedPath}' -C /data`],
           AttachStdout: true,
@@ -2596,10 +3004,10 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           timeoutId = setTimeout(() => {
             cleanup();
             reject(new Error("Restore timeout"));
-          }, 300000);
+          }, 300000); // 5 минут
         });
 
-        // Вызываем хук плагинов для события восстановления бэкапа
+        
         try {
           await pluginManager.callHook("backup_restore", server.id, {
             backupId: backup.id,
@@ -2651,21 +3059,22 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           if (node) {
             try {
               const container = await dockerManager.getContainer(node, server.containerId);
-              // Экранируем путь для безопасного использования в shell
+              
               const escapedBackupPath = backup.path.replace(/'/g, "'\\''");
               const exec = await container.exec({
                 Cmd: ["/bin/sh", "-c", `rm -f '${escapedBackupPath}'`],
                 AttachStdout: true,
                 AttachStderr: true,
+                User: "root",
               });
               await exec.start({ hijack: true, stdin: false });
             } catch (error) {
-              // Игнорируем ошибки удаления файла
+              
             }
           }
         }
 
-        // Вызываем хук плагинов для события удаления бэкапа (до удаления)
+        
         if (server) {
           try {
             await pluginManager.callHook("backup_delete", server.id, {
@@ -2679,7 +3088,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
             console.error("Error calling backup_delete hook:", error);
           }
         }
-
+        
         await storage.deleteBackup(req.params.backupId);
 
         await storage.addActivity({
@@ -2697,7 +3106,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   );
 
-  // Server Ports routes
+  
   app.get(
     "/api/servers/:id/ports",
     requireAuth,
@@ -2733,7 +3142,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           return res.status(404).json({ message: "Server not found" });
         }
 
-        // Проверка лимита портов
+        
         const ports = await storage.getPortsByServer(req.params.id);
         const maxPorts = server.limits?.maxPorts;
         if (maxPorts !== undefined && ports.length >= maxPorts) {
@@ -2745,7 +3154,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           return res.status(400).json({ message: "Valid port number (1-65535) is required" });
         }
 
-        // Проверка доступности порта
+        
         const isAvailable = await storage.checkPortAvailable(port, req.params.id);
         if (!isAvailable) {
           return res.status(409).json({ message: "Port is already in use" });
@@ -2794,7 +3203,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
 
         const server = await storage.getServer(req.params.id);
         
-        // Вызываем хук плагинов для события удаления порта (до удаления)
+        
         if (server) {
           try {
             await pluginManager.callHook("port_delete", server.id, {
@@ -2827,7 +3236,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   );
 
-  // SFTP Users routes
+  
   app.get(
     "/api/servers/:id/sftp",
     requireAuth,
@@ -2865,7 +3274,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           return res.status(404).json({ message: "Server not found" });
         }
 
-        // Проверка лимита SFTP пользователей
+        
         const sftpUsers = await storage.getSftpUsersByServer(req.params.id);
         const maxSftpUsers = server.limits?.maxSftpUsers;
         if (maxSftpUsers !== undefined && sftpUsers.length >= maxSftpUsers) {
@@ -2880,13 +3289,13 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           return res.status(400).json({ message: "Password must be at least 4 characters" });
         }
 
-        // Проверка уникальности имени пользователя для этого сервера
+        
         const existingUser = sftpUsers.find(u => u.username === username);
         if (existingUser) {
           return res.status(409).json({ message: "Username already exists for this server" });
         }
 
-        // Хешируем пароль
+        
         const passwordHash = await bcrypt.hash(password, 10);
 
         const sftpUser = await storage.createSftpUser({
@@ -2897,37 +3306,35 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           createdBy: req.currentUser?.id,
         });
 
-        // Настраиваем SFTP пользователя внутри контейнера
+        
         if (server.containerId) {
           try {
             const node = await storage.getNode(server.nodeId);
             if (node) {
               await setupSftpUserInContainer(node, server.containerId, {
                 username: sanitizeUsername(username),
-                password: password, // Используем оригинальный пароль для установки в системе
+                password: password, 
                 homeDirectory: homeDirectory ? sanitizePath(homeDirectory) : "/data",
               });
             }
           } catch (error: any) {
             console.error("Failed to setup SFTP user in container:", error);
-            // Не прерываем создание пользователя, но логируем ошибку
+            
           }
         }
 
-        // Вызываем хук плагинов для события создания SFTP пользователя
-        if (server) {
-          try {
-            await pluginManager.callHook("sftp_user_create", server.id, {
-              sftpUserId: sftpUser.id,
-              serverId: server.id,
-              serverName: server.name,
-              username: sftpUser.username,
-              homeDirectory: sftpUser.homeDirectory,
-              createdBy: req.currentUser?.id,
-            });
-          } catch (error) {
-            console.error("Error calling sftp_user_create hook:", error);
-          }
+        
+        try {
+          await pluginManager.callHook("sftp_user_create", server.id, {
+            sftpUserId: sftpUser.id,
+            serverId: server.id,
+            serverName: server.name,
+            username: sftpUser.username,
+            homeDirectory: sftpUser.homeDirectory,
+            createdBy: req.currentUser?.id,
+          });
+        } catch (error) {
+          console.error("Error calling sftp_user_create hook:", error);
         }
 
         await storage.addActivity({
@@ -2938,7 +3345,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           userId: req.currentUser?.id,
         }).catch(() => {});
 
-        // Возвращаем пользователя без пароля
+        
         const { password: _, ...safeUser } = sftpUser;
         res.status(201).json(safeUser);
       } catch (error: any) {
@@ -2976,7 +3383,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           if (typeof username !== "string" || username.length < 3) {
             return res.status(400).json({ message: "Username must be at least 3 characters" });
           }
-          // Проверка уникальности имени пользователя для этого сервера
+          
           const sftpUsers = await storage.getSftpUsersByServer(req.params.id);
           const existingUser = sftpUsers.find(u => u.username === username && u.id !== req.params.userId);
           if (existingUser) {
@@ -2989,7 +3396,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           if (typeof password !== "string" || password.length < 4) {
             return res.status(400).json({ message: "Password must be at least 4 characters" });
           }
-          // Хешируем пароль
+          
           updates.password = await bcrypt.hash(password, 10);
         }
 
@@ -3001,41 +3408,41 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           updates.isActive = isActive === true;
         }
 
-        // Обновляем в базе данных
+        
         const updatedUser = await storage.updateSftpUser(req.params.userId, updates);
         if (!updatedUser) {
           return res.status(500).json({ message: "Failed to update SFTP user" });
         }
 
-        // Обновляем SFTP пользователя в контейнере, если есть изменения
+        
         if (server.containerId && (updates.username || updates.password || updates.homeDirectory)) {
           try {
             const node = await storage.getNode(server.nodeId);
             if (node) {
-              // Если username изменился, нужно удалить старый и создать новый
+              
               if (updates.username && updates.username !== sftpUser.username) {
                 await removeSftpUserFromContainer(node, server.containerId, sftpUser.username);
                 await setupSftpUserInContainer(node, server.containerId, {
                   username: updates.username,
-                  password: password || "changeme123", // Временный пароль, если не указан новый
+                  password: password || "changeme123", 
                   homeDirectory: updates.homeDirectory || sftpUser.homeDirectory,
                 });
               } else if (updates.password || updates.homeDirectory) {
-                // Обновляем только пароль или homeDirectory (username не изменился)
+                
                 await setupSftpUserInContainer(node, server.containerId, {
                   username: updatedUser.username,
-                  password: password || "changeme123", // Используем новый пароль если есть
+                  password: password || "changeme123", 
                   homeDirectory: updates.homeDirectory || sftpUser.homeDirectory,
                 });
               }
             }
           } catch (error: any) {
             console.error("Failed to update SFTP user in container:", error);
-            // Не прерываем обновление в базе данных, но логируем ошибку
+            
           }
         }
 
-        // Вызываем хук плагинов для события обновления SFTP пользователя
+        
         try {
           await pluginManager.callHook("sftp_user_update", server.id, {
             sftpUserId: updatedUser.id,
@@ -3058,7 +3465,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           userId: req.currentUser?.id,
         }).catch(() => {});
 
-        // Возвращаем пользователя без пароля
+        
         const { password: _, ...safeUser } = updatedUser;
         res.json(safeUser);
       } catch (error: any) {
@@ -3086,7 +3493,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
 
         const server = await storage.getServer(req.params.id);
         
-        // Удаляем SFTP пользователя из контейнера
+        
         if (server && server.containerId) {
           try {
             const node = await storage.getNode(server.nodeId);
@@ -3095,11 +3502,11 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
             }
           } catch (error: any) {
             console.error("Failed to remove SFTP user from container:", error);
-            // Продолжаем удаление из базы данных даже если не удалось удалить из контейнера
+            
           }
         }
 
-        // Вызываем хук плагинов для события удаления SFTP пользователя (до удаления)
+        
         if (server) {
           try {
             await pluginManager.callHook("sftp_user_delete", server.id, {
@@ -3113,7 +3520,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
             console.error("Error calling sftp_user_delete hook:", error);
           }
         }
-
+        
         await storage.deleteSftpUser(req.params.userId);
 
         await storage.addActivity({
@@ -3131,9 +3538,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   );
 
-  // ========== API KEYS ROUTES ==========
   
-  // Get all API keys
   app.get("/api/api-keys", requireAuth, requirePermission("api.manage"), async (req, res) => {
     try {
       const apiKeys = await storage.getAllApiKeys();
@@ -3143,7 +3548,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   });
 
-  // Create API key
+  
   app.post("/api/api-keys", requireAuth, requirePermission("api.manage"), requireCSRF, async (req, res) => {
     try {
       const { name, description, permissions, expiresAt } = req.body;
@@ -3156,13 +3561,13 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         return res.status(400).json({ message: "At least one permission is required" });
       }
       
-      // Validate permissions
+      
       const validPermissions = permissions.filter(p => ALL_PERMISSIONS.includes(p as UserPermission));
       if (validPermissions.length === 0) {
         return res.status(400).json({ message: "Invalid permissions" });
       }
       
-      // Generate API key
+      
       const key = `sp_${randomBytes(32).toString("hex")}`;
       
       const apiKey = await storage.createApiKey({
@@ -3175,7 +3580,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         createdBy: req.currentUser!.id,
       });
       
-      // Вызываем хук плагинов для события создания API ключа
+      
       try {
         await pluginManager.callHook("api_key_create", apiKey.id, {
           apiKeyId: apiKey.id,
@@ -3202,7 +3607,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   });
 
-  // Update API key (toggle active status)
+  
   app.patch("/api/api-keys/:id", requireAuth, requirePermission("api.manage"), requireCSRF, async (req, res) => {
     try {
       if (!isValidUUID(req.params.id)) {
@@ -3235,7 +3640,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   });
 
-  // Delete API key
+  
   app.delete("/api/api-keys/:id", requireAuth, requirePermission("api.manage"), requireCSRF, async (req, res) => {
     try {
       if (!isValidUUID(req.params.id)) {
@@ -3247,7 +3652,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         return res.status(404).json({ message: "API key not found" });
       }
       
-      // Вызываем хук плагинов для события удаления API ключа (до удаления)
+      
       try {
         await pluginManager.callHook("api_key_delete", apiKey.id, {
           apiKeyId: apiKey.id,
@@ -3274,14 +3679,12 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   });
 
-  // ========== DDOS PROTECTION ROUTES ==========
   
-  // Get DDoS settings for panel
   app.get("/api/ddos-settings/panel", requireAuth, requirePermission("ddos.manage"), async (req, res) => {
     try {
       let settings = await storage.getDdosSettingsByTarget("panel", null);
       
-      // Create default settings if not exist
+      
       if (!settings) {
         settings = await storage.createDdosSettings({
           targetType: "panel",
@@ -3306,13 +3709,13 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   });
 
-  // Update DDoS settings for panel
+  
   app.put("/api/ddos-settings/panel", requireAuth, requirePermission("ddos.manage"), requireCSRF, async (req, res) => {
     try {
       let settings = await storage.getDdosSettingsByTarget("panel", null);
       
       if (!settings) {
-        // Create if not exists
+        
         settings = await storage.createDdosSettings({
           targetType: "panel",
           targetId: null,
@@ -3320,7 +3723,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           updatedBy: req.currentUser!.id,
         });
       } else {
-        // Update existing
+        
         settings = await storage.updateDdosSettings(settings.id, {
           ...req.body,
           updatedBy: req.currentUser!.id,
@@ -3328,9 +3731,9 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       }
       
       await storage.addActivity({
-        type: "security_event",
-        title: "DDoS Settings Updated",
-        description: "Panel DDoS protection settings updated",
+        type: "server_command",
+        title: "Panel DDoS Settings Updated",
+        description: `DDoS settings updated`,
         timestamp: new Date(),
         userId: req.currentUser?.id,
       }).catch(() => {});
@@ -3341,7 +3744,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   });
 
-  // Get DDoS settings for server
+  
   app.get("/api/ddos-settings/server/:serverId", requireAuth, requirePermission("ddos.manage"), async (req, res) => {
     try {
       if (!isValidUUID(req.params.serverId)) {
@@ -3355,7 +3758,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       
       let settings = await storage.getDdosSettingsByTarget("server", req.params.serverId);
       
-      // Create default settings if not exist
+      
       if (!settings) {
         settings = await storage.createDdosSettings({
           targetType: "server",
@@ -3380,7 +3783,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   });
 
-  // Update DDoS settings for server
+  
   app.put("/api/ddos-settings/server/:serverId", requireAuth, requirePermission("ddos.manage"), requireCSRF, async (req, res) => {
     try {
       if (!isValidUUID(req.params.serverId)) {
@@ -3395,7 +3798,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       let settings = await storage.getDdosSettingsByTarget("server", req.params.serverId);
       
       if (!settings) {
-        // Create if not exists
+        
         settings = await storage.createDdosSettings({
           targetType: "server",
           targetId: req.params.serverId,
@@ -3403,7 +3806,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           updatedBy: req.currentUser!.id,
         });
       } else {
-        // Update existing
+        
         settings = await storage.updateDdosSettings(settings.id, {
           ...req.body,
           updatedBy: req.currentUser!.id,
@@ -3411,7 +3814,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       }
       
       await storage.addActivity({
-        type: "security_event",
+        type: "server_command",
         title: "DDoS Settings Updated",
         description: `DDoS protection settings updated for server '${server.name}'`,
         timestamp: new Date(),
@@ -3424,14 +3827,14 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   });
 
-  // Node routes
+  
   app.get("/api/nodes", requireAuth, requirePermission("nodes.manage"), async (req, res) => {
     const nodes = await storage.getAllNodes();
     res.json(nodes);
   });
 
   app.get("/api/nodes/:id", requireAuth, requirePermission("nodes.manage"), async (req, res) => {
-    // Валидация UUID
+    
     if (!isValidUUID(req.params.id)) {
       return res.status(400).json({ message: "Invalid node ID format" });
     }
@@ -3448,13 +3851,13 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       const data = insertNodeSchema.parse(req.body);
       const node = await storage.createNode(data);
       
-      // Проверяем подключение к Docker на ноде
+      
       const isConnected = await dockerManager.checkNodeConnection(node);
       if (!isConnected) {
         await storage.updateNode(node.id, { status: "offline" });
       }
       
-      // Вызываем хук плагинов для события создания ноды
+      
       try {
         await pluginManager.callHook("node_create", node.id, {
           nodeId: node.id,
@@ -3480,7 +3883,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     } catch (error: any) {
       console.error("Create node error:", error);
       if (error.errors) {
-        // Zod validation error
+        
         const messages = error.errors.map((e: any) => `${e.path.join('.')}: ${e.message}`).join(', ');
         return res.status(400).json({ message: `Validation error: ${messages}` });
       }
@@ -3489,16 +3892,16 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
   });
 
   app.delete("/api/nodes/:id", requireAuth, requirePermission("nodes.manage"), requireCSRF, async (req, res) => {
-    // Валидация UUID
+    
     if (!isValidUUID(req.params.id)) {
       return res.status(400).json({ message: "Invalid node ID format" });
     }
 
     const node = await storage.getNode(req.params.id);
     
-    // Удаляем подключение к Docker
+    
     if (node) {
-      // Вызываем хук плагинов для события удаления ноды (до удаления)
+      
       try {
         await pluginManager.callHook("node_delete", node.id, {
           nodeId: node.id,
@@ -3527,9 +3930,9 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     res.json({ message: "Node deleted" });
   });
 
-  // Проверка подключения к ноде
+  
   app.post("/api/nodes/:id/check", requireAuth, requirePermission("nodes.manage"), async (req, res) => {
-    // Валидация UUID
+    
     if (!isValidUUID(req.params.id)) {
       return res.status(400).json({ message: "Invalid node ID format" });
     }
@@ -3559,15 +3962,15 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     res.json(storage.getAllNodeStats());
   });
 
-  // Activity routes
+  
   app.get("/api/activity", requireAuth, requirePermission("activity.view"), async (req, res) => {
     const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
     const activities = await storage.getRecentActivities(limit);
     
-    // Обогащаем активности информацией о пользователе
+    
     const enrichedActivities = await Promise.all(
       activities.map(async (activity) => {
-        // Убеждаемся, что timestamp правильно сериализуется в ISO строку
+        
         const timestamp = activity.timestamp instanceof Date 
           ? activity.timestamp.toISOString() 
           : new Date(activity.timestamp).toISOString();
@@ -3591,25 +3994,25 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     res.json(enrichedActivities);
   });
 
-  // Create HTTP server
+  
   const httpServer = createServer(app);
 
-  // WebSocket server for real-time updates
+  
   const wss = new WebSocketServer({
     server: httpServer,
     path: "/ws",
     verifyClient: async (info, callback) => {
-      // Проверяем сессию через cookies для WebSocket подключения
+      
       if (!sessionMiddleware) {
-        return callback(true); // Если сессия не инициализирована, принимаем подключение
+        return callback(true); 
       }
 
       try {
-        // Создаем request объект для проверки сессии
+        
         const req = info.req as any;
         const res = {} as any;
 
-        // Проверяем сессию через middleware
+        
         await new Promise<void>((resolve, reject) => {
           sessionMiddleware(req, res, (err?: any) => {
             if (err) reject(err);
@@ -3617,7 +4020,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           });
         });
 
-        // Проверяем наличие userId в сессии
+        
         if (req.session && req.session.userId) {
           callback(true);
         } else {
@@ -3631,7 +4034,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     },
   });
 
-  // Устанавливаем WebSocket server в logStreamer
+  
   logStreamer.setWebSocketServer(wss);
 
   wss.on("connection", (ws: WebSocket, req) => {
@@ -3668,7 +4071,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       try {
         ws.close(1008, "Unauthorized");
       } catch (error) {
-        // ignore
+        
       }
     };
 
@@ -3832,7 +4235,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           }
         }
 
-        // VDS Terminal handlers
+        
         if (data.type === "vds_terminal_connect") {
           await vdsTerminal.connect(user.id, ws);
         }
@@ -3851,7 +4254,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
 
     ws.on("close", async () => {
       console.log("WebSocket client disconnected");
-      // Очищаем подписки при отключении для предотвращения утечек памяти
+      
       const subscribedServers = (ws as any).subscribedServers as Set<string>;
       if (subscribedServers) {
         subscribedServers.forEach(serverId => {
@@ -3860,19 +4263,19 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         subscribedServers.clear();
       }
       
-      // Отключаем VDS терминал при закрытии соединения
+      
       const user = await ensureUser();
       if (user) {
         vdsTerminal.disconnect(user.id, ws);
       }
       
-      // Удаляем ссылки для помощи сборщику мусора
+      
       delete (ws as any).subscribedServers;
     });
 
     ws.on("error", (error) => {
       console.error("WebSocket error:", error);
-      // Очищаем подписки при ошибке
+      
       const subscribedServers = (ws as any).subscribedServers as Set<string>;
       if (subscribedServers) {
         subscribedServers.forEach(serverId => {
@@ -3883,19 +4286,37 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     });
   });
 
-  // Real-time stats updates from Docker
-  // Используем setInterval с правильной очисткой для предотвращения утечек памяти
+  
   let statsInterval: NodeJS.Timeout | null = null;
+  let lastSchedulerTickKey = "";
   statsInterval = setInterval(async () => {
     try {
-      // Обновляем статистику серверов из Docker
+      
       await statsCollector.updateAllServerStats();
       
-      // Обновляем статистику нод
+      
       await statsCollector.updateAllNodeStats();
+
+      const now = new Date();
+      const tickKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}-${now.getHours()}-${now.getMinutes()}`;
+      if (tickKey !== lastSchedulerTickKey) {
+        lastSchedulerTickKey = tickKey;
+        for (const task of scheduledTasks.values()) {
+          if (!task.enabled) continue;
+          if (!isCronDue(task.cron, now)) continue;
+          try {
+            await runScheduledTask(task);
+            task.lastRunAt = new Date();
+            task.nextRunAt = computeNextRun(task.cron, now);
+            task.lastError = null;
+          } catch (error: any) {
+            task.lastError = error.message || "Task failed";
+          }
+        }
+      }
     } catch (error) {
       console.error("Stats update error:", error);
-      // Логируем критические ошибки в систему безопасности
+      
       await logSecurityEvent({
         type: "unauthorized_access",
         ip: "system",
@@ -3904,7 +4325,7 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       }).catch(() => {});
     }
 
-    // Проверяем подключение к нодам каждые 30 секунд
+    
     const checkConnections = Math.floor(Date.now() / 1000) % 30 < 3;
     if (checkConnections) {
       try {
@@ -3919,9 +4340,9 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
         console.error("Node connection check error:", error);
       }
     }
-  }, 5000); // Обновляем каждые 5 секунд
+  }, 5000); 
 
-  // Очистка интервала при закрытии сервера (предотвращение утечек памяти)
+  
   httpServer.on("close", () => {
     if (statsInterval) {
       clearInterval(statsInterval);
@@ -3929,24 +4350,27 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     }
   });
 
+  
+  registerDdosRoutes(app, requireAuth, requirePermission, requireCSRF);
+
   return httpServer;
 }
 
-// Helper function to generate startup command based on server settings
+
 function generateStartupCommand(server: Server): string[] {
   const config = server.config as any || {};
   const startupSettings = config.startupSettings || {};
   
-  // If custom startup command is provided, use it
+  
   if (startupSettings.startupCommand && startupSettings.startupCommand.trim()) {
     return ["/bin/sh", "-c", startupSettings.startupCommand.trim()];
   }
   
-  // Generate command based on game type
+  
   switch (server.gameType) {
     case "minecraft":
     case "custom": {
-      // Java-based servers (Minecraft, custom Java servers)
+      
       const jarFile = startupSettings.jarFile || "server.jar";
       const javaVersion = startupSettings.javaVersion || "Java 21";
       const gc = startupSettings.garbageCollector || "UseG1GC";
@@ -3955,11 +4379,11 @@ function generateStartupCommand(server: Server): string[] {
       const minMemory = startupSettings.minMemory || "128M";
       const additionalArgs = startupSettings.additionalArgs || "";
       
-      // Calculate max memory based on RAM limit and percentage
-      const maxMemoryMB = Math.floor((server.ramLimit * 1024 * memoryPercent) / 100);
+      
+      const maxMemoryMB = Math.floor((server.ramLimit * 1024 * 1024) * memoryPercent / 100);
       const maxMemory = `${maxMemoryMB}M`;
       
-      // Build JVM arguments
+      
       const jvmArgs: string[] = [
         `-Xms${minMemory}`,
         `-Xmx${maxMemory}`,
@@ -3968,26 +4392,26 @@ function generateStartupCommand(server: Server): string[] {
         `-Dfile.encoding=UTF-8`,
       ];
       
-      // Add additional arguments if provided
+      
       if (additionalArgs.trim()) {
         const args = additionalArgs.trim().split(/\s+/).filter((arg: string) => arg.length > 0);
         jvmArgs.push(...args);
       }
       
-      // Build final command
+      
       const command = [
         "java",
+        "-nogui",
         ...jvmArgs,
         "-jar",
         jarFile,
-        "nogui"
       ].join(" ");
       
       return ["/bin/sh", "-c", command];
     }
     
     case "csgo": {
-      // CS:GO server uses srcds_run
+      
       const additionalArgs = startupSettings.additionalArgs || "";
       const timeZone = startupSettings.timeZone || "UTC";
       
@@ -4001,7 +4425,7 @@ function generateStartupCommand(server: Server): string[] {
     }
     
     case "rust": {
-      // Rust server
+      
       const additionalArgs = startupSettings.additionalArgs || "";
       const timeZone = startupSettings.timeZone || "UTC";
       
@@ -4015,7 +4439,7 @@ function generateStartupCommand(server: Server): string[] {
     }
     
     case "ark": {
-      // ARK server
+      
       const additionalArgs = startupSettings.additionalArgs || "";
       const timeZone = startupSettings.timeZone || "UTC";
       
@@ -4029,7 +4453,7 @@ function generateStartupCommand(server: Server): string[] {
     }
     
     case "valheim": {
-      // Valheim server
+      
       const additionalArgs = startupSettings.additionalArgs || "";
       const timeZone = startupSettings.timeZone || "UTC";
       
@@ -4043,7 +4467,7 @@ function generateStartupCommand(server: Server): string[] {
     }
     
     case "terraria": {
-      // Terraria server
+      
       const additionalArgs = startupSettings.additionalArgs || "";
       const timeZone = startupSettings.timeZone || "UTC";
       
@@ -4057,7 +4481,7 @@ function generateStartupCommand(server: Server): string[] {
     }
     
     case "gmod": {
-      // Garry's Mod server
+      
       const additionalArgs = startupSettings.additionalArgs || "";
       const timeZone = startupSettings.timeZone || "UTC";
       
@@ -4071,12 +4495,12 @@ function generateStartupCommand(server: Server): string[] {
     }
     
     default:
-      // For unknown game types, return empty to use image default
+      
       return [];
   }
 }
 
-// Helper function to create Docker container for game server
+
 async function createGameServerContainer(server: Server, node: any) {
   const imageMap: Record<string, string> = {
     minecraft: "eclipse-temurin:21-jre",
@@ -4089,19 +4513,19 @@ async function createGameServerContainer(server: Server, node: any) {
     custom: "eclipse-temurin:21-jre",
   };
   
-  // For game types that use their own images, we might not need custom Cmd
+  
   const usesCustomCommand = ["minecraft", "custom"].includes(server.gameType);
 
   const image = imageMap[server.gameType] || imageMap.custom;
 
   try {
-    // Получаем Docker клиент для ноды
+    
     const docker = dockerManager.getDockerClient(node);
     
-    // Check if Docker is available
+    
     await docker.ping();
 
-    // Pull image first (in production, images should be pre-pulled)
+    
     console.log(`Pulling image ${image} on node ${node.name}...`);
     await new Promise((resolve, reject) => {
       docker.pull(image, (err: Error, stream: NodeJS.ReadableStream) => {
@@ -4119,27 +4543,27 @@ async function createGameServerContainer(server: Server, node: any) {
       });
     });
 
-    // Generate startup command
+    
     const cmd = generateStartupCommand(server);
     
-    // Prepare environment variables
+    
     const envVars: string[] = [];
     
-    // Add game-specific environment variables
+    
     if (server.gameType === "minecraft" || server.gameType === "custom") {
       envVars.push("EULA=TRUE");
     }
     
     envVars.push(`SERVER_PORT=${server.port}`);
     
-    // Add timezone if specified
+    
     const config = server.config as any || {};
     const startupSettings = config.startupSettings || {};
     if (startupSettings.timeZone) {
       envVars.push(`TZ=${startupSettings.timeZone}`);
     }
 
-    // Create container using dockerManager
+    
     const containerConfig: any = {
       Image: image,
       name: `sparkpanel-${server.id}`,
@@ -4153,7 +4577,7 @@ async function createGameServerContainer(server: Server, node: any) {
       Env: envVars,
     };
     
-    // Add command if generated
+    
     if (cmd.length > 0) {
       containerConfig.Cmd = cmd;
     }
@@ -4164,19 +4588,19 @@ async function createGameServerContainer(server: Server, node: any) {
   } catch (error: any) {
     console.error(`Error creating container on node ${node.name}:`, error);
     
-    // Проверяем, доступен ли Docker на ноде
+    
     const isConnected = await dockerManager.checkNodeConnection(node);
     if (!isConnected) {
       await storage.updateNode(node.id, { status: "offline" });
       throw new Error(`Docker is not available on node ${node.name}. Please ensure Docker is running and accessible.`);
     }
     
-    // Если подключение есть, но создание контейнера не удалось - пробрасываем ошибку дальше
+    
     throw new Error(`Failed to create container on node ${node.name}: ${error.message || error}`);
   }
 }
 
-// Helper function to setup SFTP user in container
+
 async function setupSftpUserInContainer(
   node: Node,
   containerId: string,
@@ -4185,55 +4609,37 @@ async function setupSftpUserInContainer(
   try {
     const container = await dockerManager.getContainer(node, containerId);
     
-    // Проверяем, запущен ли контейнер
-    const inspect = await container.inspect();
-    if (!inspect.State.Running) {
-      throw new Error("Container is not running. Start the server first to configure SFTP.");
-    }
-
-    // Устанавливаем openssh-server если его нет (для Ubuntu/Debian образов)
-    const installSshScript = `
-      if ! command -v sshd &> /dev/null; then
-        if command -v apt-get &> /dev/null; then
-          apt-get update -qq && apt-get install -y -qq openssh-server > /dev/null 2>&1 || true
-        elif command -v yum &> /dev/null; then
-          yum install -y -q openssh-server > /dev/null 2>&1 || true
-        elif command -v apk &> /dev/null; then
-          apk add --quiet openssh > /dev/null 2>&1 || true
-        fi
+    const safeUsername = user.username.replace(/[^a-zA-Z0-9_-]/g, "");
+    
+    
+    const removeUserScript = `
+      if id -u "${safeUsername}" &> /dev/null; then
+        userdel -r "${safeUsername}" 2>/dev/null || true
       fi
     `;
 
-    const installExec = await container.exec({
-      Cmd: ["/bin/sh", "-c", installSshScript],
+    const removeExec = await container.exec({
+      Cmd: ["/bin/sh", "-c", removeUserScript],
       AttachStdout: true,
       AttachStderr: true,
+      User: "root",
     });
 
-    await installExec.start({ hijack: true, stdin: false });
+    await removeExec.start({ hijack: true, stdin: false });
     await new Promise<void>((resolve) => {
-      const timeoutId = setTimeout(() => resolve(), 5000); // Даем время на установку
-      // Таймаут будет очищен автоматически при resolve
-      // В данном случае это простой задержка, не критично для очистки
+      const timeoutId = setTimeout(() => resolve(), 5000); 
+      
     });
 
-    // Создаем пользователя и настраиваем его
-    const safeUsername = user.username.replace(/[^a-zA-Z0-9_-]/g, "");
-    const safeHomeDir = user.homeDirectory.replace(/"/g, '\\"');
     
     const setupUserScript = `
       # Создаем пользователя если его нет
       if ! id -u "${safeUsername}" &> /dev/null; then
-        useradd -m -d "${safeHomeDir}" -s /usr/sbin/nologin "${safeUsername}" 2>/dev/null || true
+        useradd -m -d "/data" -s /usr/sbin/nologin "${safeUsername}" 2>/dev/null || true
       fi
       
       # Устанавливаем пароль
       echo "${safeUsername}:${user.password}" | chpasswd 2>/dev/null || true
-      
-      # Создаем домашнюю директорию если её нет
-      mkdir -p "${safeHomeDir}" 2>/dev/null || true
-      chown "${safeUsername}:${safeUsername}" "${safeHomeDir}" 2>/dev/null || true
-      chmod 755 "${safeHomeDir}" 2>/dev/null || true
     `;
 
     const setupExec = await container.exec({
@@ -4253,17 +4659,17 @@ async function setupSftpUserInContainer(
         cleanup();
         resolve();
       });
-      setupStream.on("error", () => {
+      setupStream.on("error", (err) => {
         cleanup();
         resolve();
       });
       timeoutId = setTimeout(() => {
         cleanup();
         resolve();
-      }, 10000);
+      }, 5000);
     });
 
-    // Настраиваем SSH для SFTP (добавляем конфигурацию если её нет)
+    
     const sshConfigScript = `
       # Создаем директорию для SSH конфигурации если её нет
       mkdir -p /etc/ssh/sshd_config.d 2>/dev/null || true
@@ -4273,7 +4679,7 @@ async function setupSftpUserInContainer(
         echo "" >> /etc/ssh/sshd_config
         echo "Match User ${safeUsername}" >> /etc/ssh/sshd_config
         echo "  ForceCommand internal-sftp" >> /etc/ssh/sshd_config
-        echo "  ChrootDirectory ${safeHomeDir}" >> /etc/ssh/sshd_config
+        echo "  ChrootDirectory /data" >> /etc/ssh/sshd_config
         echo "  PermitTunnel no" >> /etc/ssh/sshd_config
         echo "  AllowAgentForwarding no" >> /etc/ssh/sshd_config
         echo "  AllowTcpForwarding no" >> /etc/ssh/sshd_config
@@ -4322,7 +4728,7 @@ async function setupSftpUserInContainer(
   }
 }
 
-// Helper function to remove SFTP user from container
+
 async function removeSftpUserFromContainer(
   node: Node,
   containerId: string,
@@ -4333,16 +4739,10 @@ async function removeSftpUserFromContainer(
     
     const safeUsername = username.replace(/[^a-zA-Z0-9_-]/g, "");
     
-    // Удаляем пользователя из системы
+    
     const removeUserScript = `
       if id -u "${safeUsername}" &> /dev/null; then
         userdel -r "${safeUsername}" 2>/dev/null || true
-      fi
-      
-      # Удаляем конфигурацию SSH для этого пользователя
-      if [ -f /etc/ssh/sshd_config ]; then
-        sed -i '/Match User ${safeUsername}/,/X11Forwarding no/d' /etc/ssh/sshd_config 2>/dev/null || true
-        pkill -HUP sshd 2>/dev/null || true
       fi
     `;
 
@@ -4353,24 +4753,32 @@ async function removeSftpUserFromContainer(
       User: "root",
     });
 
-    const removeStream = await removeExec.start({ hijack: true, stdin: false });
+    await removeExec.start({ hijack: true, stdin: false });
     await new Promise<void>((resolve) => {
-      let timeoutId: NodeJS.Timeout | null = null;
-      const cleanup = () => {
-        if (timeoutId) clearTimeout(timeoutId);
-      };
-      removeStream.on("end", () => {
-        cleanup();
-        resolve();
-      });
-      removeStream.on("error", () => {
-        cleanup();
-        resolve();
-      });
-      timeoutId = setTimeout(() => {
-        cleanup();
-        resolve();
-      }, 5000);
+      const timeoutId = setTimeout(() => resolve(), 5000); 
+      
+    });
+
+    
+    const sshConfigRemoveScript = `
+      # Удаляем конфигурацию SSH для пользователя
+      if [ -f /etc/ssh/sshd_config ]; then
+        sed -i '/Match User ${safeUsername}/,/X11Forwarding no/d' /etc/ssh/sshd_config 2>/dev/null || true
+        pkill -HUP sshd 2>/dev/null || true
+      fi
+    `;
+
+    const sshConfigRemoveExec = await container.exec({
+      Cmd: ["/bin/sh", "-c", sshConfigRemoveScript],
+      AttachStdout: true,
+      AttachStderr: true,
+      User: "root",
+    });
+
+    await sshConfigRemoveExec.start({ hijack: true, stdin: false });
+    await new Promise<void>((resolve) => {
+      const timeoutId = setTimeout(() => resolve(), 5000); 
+      
     });
 
   } catch (error: any) {

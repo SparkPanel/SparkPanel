@@ -40,6 +40,12 @@ export default function ServerDetailPage() {
     enabled: server?.status === "running",
   });
 
+  const { data: nodes = [] } = useQuery<Node[]>({
+    queryKey: ["/api/nodes"],
+  });
+  const [targetNodeId, setTargetNodeId] = useState("");
+  const [migrateDialogOpen, setMigrateDialogOpen] = useState(false);
+
   const controlMutation = useMutation({
     mutationFn: ({ action }: { action: string }) =>
       apiRequest("POST", `/api/servers/${id}/${action}`, {}),
@@ -63,6 +69,19 @@ export default function ServerDetailPage() {
         description: "The server has been removed",
       });
       setLocation("/servers");
+    },
+  });
+
+  const migrateMutation = useMutation({
+    mutationFn: (payload: { targetNodeId: string; keepSource: boolean }) =>
+      apiRequest("POST", `/api/servers/${id}/migrate`, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/servers", id] });
+      setMigrateDialogOpen(false);
+      toast({ title: "Migrated", description: "Server migrated successfully" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Migration failed", description: error.message || "Failed to migrate server", variant: "destructive" });
     },
   });
 
@@ -152,6 +171,39 @@ export default function ServerDetailPage() {
             <Trash2 className="w-4 h-4 mr-2" />
             Delete
           </Button>
+          <Dialog open={migrateDialogOpen} onOpenChange={setMigrateDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline">
+                <RotateCw className="w-4 h-4 mr-2" />
+                Migrate
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Migrate Server</DialogTitle>
+                <DialogDescription>Select target node for migration</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3">
+                <Select value={targetNodeId} onValueChange={setTargetNodeId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select target node" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {nodes.filter((n) => n.id !== server.nodeId).map((node) => (
+                      <SelectItem key={node.id} value={node.id}>{node.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  onClick={() => migrateMutation.mutate({ targetNodeId, keepSource: false })}
+                  disabled={migrateMutation.isPending || !targetNodeId}
+                  className="w-full"
+                >
+                  {migrateMutation.isPending ? "Migrating..." : "Start Migration"}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
@@ -441,7 +493,10 @@ function FilesTab({ serverId }: { serverId: string }) {
   const [currentPath, setCurrentPath] = useState("/data");
   const { data: files, isLoading, refetch } = useQuery<FileEntry[]>({
     queryKey: ["/api/servers", serverId, "files", currentPath],
-    queryFn: () => apiRequest("GET", `/api/servers/${serverId}/files?path=${encodeURIComponent(currentPath)}`),
+    queryFn: async () => {
+      const response = await apiRequest("GET", `/api/servers/${serverId}/files?path=${encodeURIComponent(currentPath)}`);
+      return response.json();
+    },
   });
 
   const { toast } = useToast();
@@ -519,6 +574,60 @@ function FilesTab({ serverId }: { serverId: string }) {
       toast({ title: "Creation failed", description: error.message || "Failed to create folder", variant: "destructive" });
     },
   });
+
+  const renameMutation = useMutation({
+    mutationFn: async ({ fromPath, newName }: { fromPath: string; newName: string }) => {
+      const response = await apiRequest("PATCH", `/api/servers/${serverId}/files/rename`, { fromPath, newName });
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Renamed", description: "File renamed successfully" });
+      setRenameDialogOpen(false);
+      setRenameTarget(null);
+      setNewName("");
+      refetch();
+    },
+    onError: (error: any) => {
+      toast({ title: "Rename failed", description: error.message || "Failed to rename file", variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (path: string) => {
+      const response = await apiRequest("DELETE", `/api/servers/${serverId}/files?path=${encodeURIComponent(path)}`, {});
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Deleted", description: "Entry deleted successfully" });
+      refetch();
+    },
+    onError: (error: any) => {
+      toast({ title: "Delete failed", description: error.message || "Failed to delete entry", variant: "destructive" });
+    },
+  });
+
+  const downloadFile = async (path: string, name: string) => {
+    try {
+      const response = await fetch(`/api/servers/${serverId}/files/download?path=${encodeURIComponent(path)}`, {
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({ message: "Failed to download file" }));
+        throw new Error(data.message || "Failed to download file");
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      toast({ title: "Download failed", description: error.message || "Failed to download file", variant: "destructive" });
+    }
+  };
 
   const handleUpload = () => {
     if (!selectedFile) {
@@ -708,14 +817,32 @@ function FilesTab({ serverId }: { serverId: string }) {
                   </div>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     {file.type === "file" && (
-                      <Button variant="ghost" size="sm" title="Edit file">
-                        <Edit className="w-4 h-4" />
+                      <Button variant="ghost" size="sm" title="Download" onClick={() => downloadFile(file.path, file.name)}>
+                        <Download className="w-4 h-4" />
                       </Button>
                     )}
-                    <Button variant="ghost" size="sm" title="Rename">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      title="Rename"
+                      onClick={() => {
+                        setRenameTarget(file);
+                        setNewName(file.name);
+                        setRenameDialogOpen(true);
+                      }}
+                    >
                       <Edit className="w-4 h-4" />
                     </Button>
-                    <Button variant="ghost" size="sm" title="Delete">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      title="Delete"
+                      onClick={() => {
+                        if (confirm(`Delete '${file.name}'?`)) {
+                          deleteMutation.mutate(file.path);
+                        }
+                      }}
+                    >
                       <Trash className="w-4 h-4 text-destructive" />
                     </Button>
                   </div>
@@ -725,6 +852,29 @@ function FilesTab({ serverId }: { serverId: string }) {
           </ScrollArea>
         )}
       </CardContent>
+      <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename</DialogTitle>
+            <DialogDescription>Enter new name for {renameTarget?.name}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input value={newName} onChange={(e) => setNewName(e.target.value)} />
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setRenameDialogOpen(false)}>Cancel</Button>
+              <Button
+                onClick={() => {
+                  if (!renameTarget || !newName.trim()) return;
+                  renameMutation.mutate({ fromPath: renameTarget.path, newName: newName.trim() });
+                }}
+                disabled={renameMutation.isPending || !newName.trim()}
+              >
+                {renameMutation.isPending ? "Renaming..." : "Rename"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

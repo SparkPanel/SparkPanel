@@ -20,6 +20,24 @@ interface SettingsPageProps {
   username: string;
 }
 
+interface SecuritySettings {
+  allowlistEnabled: boolean;
+  allowedIps: string[];
+  lockdownEnabled: boolean;
+}
+
+interface ScheduledTask {
+  id: string;
+  name: string;
+  type: "server_backup" | "server_restart";
+  serverId: string;
+  cron: string;
+  enabled: boolean;
+  nextRunAt: string | null;
+  lastRunAt: string | null;
+  lastError: string | null;
+}
+
 export default function SettingsPage({ username }: SettingsPageProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -42,9 +60,28 @@ export default function SettingsPage({ username }: SettingsPageProps) {
   const [isSaving2FA, setIsSaving2FA] = useState(false);
   const [is2FAEnabled, setIs2FAEnabled] = useState(false);
   const [setupStep, setSetupStep] = useState<"token" | "code">("token");
+  const [allowlistEnabled, setAllowlistEnabled] = useState(false);
+  const [lockdownEnabled, setLockdownEnabled] = useState(false);
+  const [allowedIpsText, setAllowedIpsText] = useState("");
+  const [taskName, setTaskName] = useState("");
+  const [taskType, setTaskType] = useState<"server_backup" | "server_restart">("server_backup");
+  const [taskServerId, setTaskServerId] = useState("");
+  const [taskCron, setTaskCron] = useState("0 */6 * * *");
 
   const { data: currentUser } = useQuery<{ user: any }>({
     queryKey: ["/api/auth/me"],
+  });
+
+  const { data: servers = [] } = useQuery<any[]>({
+    queryKey: ["/api/servers"],
+  });
+
+  const { data: securitySettings } = useQuery<SecuritySettings>({
+    queryKey: ["/api/settings/security"],
+  });
+
+  const { data: schedulerTasks = [] } = useQuery<ScheduledTask[]>({
+    queryKey: ["/api/scheduler/tasks"],
   });
 
   useEffect(() => {
@@ -62,6 +99,14 @@ export default function SettingsPage({ username }: SettingsPageProps) {
       setSidebarAccentColor(panelSettings.sidebarAccentColor || "");
     }
   }, [panelSettings]);
+
+  useEffect(() => {
+    if (securitySettings) {
+      setAllowlistEnabled(securitySettings.allowlistEnabled);
+      setLockdownEnabled(securitySettings.lockdownEnabled);
+      setAllowedIpsText((securitySettings.allowedIps || []).join(", "));
+    }
+  }, [securitySettings]);
 
   const handleUpdateNickname = async () => {
     if (nickname.length > 50) {
@@ -232,6 +277,40 @@ export default function SettingsPage({ username }: SettingsPageProps) {
         variant: "destructive",
       });
     },
+  });
+
+  const updateSecurityMutation = useMutation({
+    mutationFn: (payload: SecuritySettings) => apiRequest("PUT", "/api/settings/security", payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/security"] });
+      toast({ title: "Security updated", description: "Security settings saved" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed", description: error.message || "Failed to save security settings", variant: "destructive" });
+    },
+  });
+
+  const createTaskMutation = useMutation({
+    mutationFn: (payload: { name: string; type: string; serverId: string; cron: string }) =>
+      apiRequest("POST", "/api/scheduler/tasks", payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/scheduler/tasks"] });
+      setTaskName("");
+      toast({ title: "Task created", description: "Scheduled task created" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed", description: error.message || "Failed to create task", variant: "destructive" });
+    },
+  });
+
+  const runTaskMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("POST", `/api/scheduler/tasks/${id}/run`, {}),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/scheduler/tasks"] }),
+  });
+
+  const deleteTaskMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/scheduler/tasks/${id}`, {}),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/scheduler/tasks"] }),
   });
 
   // Конвертация hex в HSL формат (h s l)
@@ -439,6 +518,83 @@ export default function SettingsPage({ username }: SettingsPageProps) {
               <p className="text-sm font-medium">Panel Version</p>
               <p className="text-sm text-muted-foreground mt-1">1.3.1</p>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Security Controls</CardTitle>
+          <CardDescription>IP allowlist and lockdown mode</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={allowlistEnabled} onChange={(e) => setAllowlistEnabled(e.target.checked)} />
+            Enable IP allowlist
+          </label>
+          <Input
+            value={allowedIpsText}
+            onChange={(e) => setAllowedIpsText(e.target.value)}
+            placeholder="127.0.0.1, 1.2.3.4"
+          />
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={lockdownEnabled} onChange={(e) => setLockdownEnabled(e.target.checked)} />
+            Enable lockdown mode (read-only for non-admin)
+          </label>
+          <Button
+            onClick={() =>
+              updateSecurityMutation.mutate({
+                allowlistEnabled,
+                lockdownEnabled,
+                allowedIps: allowedIpsText.split(",").map((v) => v.trim()).filter(Boolean),
+              })
+            }
+            disabled={updateSecurityMutation.isPending}
+          >
+            {updateSecurityMutation.isPending ? "Saving..." : "Save Security Settings"}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Scheduler</CardTitle>
+          <CardDescription>Cron tasks for backup/restart</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <Input value={taskName} onChange={(e) => setTaskName(e.target.value)} placeholder="Task name" />
+            <select className="h-10 rounded-md border px-3 bg-background" value={taskType} onChange={(e) => setTaskType(e.target.value as any)}>
+              <option value="server_backup">Server backup</option>
+              <option value="server_restart">Server restart</option>
+            </select>
+            <select className="h-10 rounded-md border px-3 bg-background" value={taskServerId} onChange={(e) => setTaskServerId(e.target.value)}>
+              <option value="">Select server</option>
+              {servers.map((server) => (
+                <option key={server.id} value={server.id}>{server.name}</option>
+              ))}
+            </select>
+            <Input value={taskCron} onChange={(e) => setTaskCron(e.target.value)} placeholder="*/15 * * * *" />
+          </div>
+          <Button
+            onClick={() => createTaskMutation.mutate({ name: taskName, type: taskType, serverId: taskServerId, cron: taskCron })}
+            disabled={createTaskMutation.isPending || !taskName || !taskServerId || !taskCron}
+          >
+            {createTaskMutation.isPending ? "Creating..." : "Create Task"}
+          </Button>
+          <div className="space-y-2">
+            {schedulerTasks.map((task) => (
+              <div key={task.id} className="border rounded p-3 flex items-center justify-between gap-2">
+                <div className="text-sm">
+                  <div className="font-medium">{task.name}</div>
+                  <div className="text-muted-foreground">{task.type} · {task.cron}</div>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={() => runTaskMutation.mutate(task.id)}>Run now</Button>
+                  <Button size="sm" variant="destructive" onClick={() => deleteTaskMutation.mutate(task.id)}>Delete</Button>
+                </div>
+              </div>
+            ))}
           </div>
         </CardContent>
       </Card>

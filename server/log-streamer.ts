@@ -4,23 +4,19 @@ import { storage } from "./storage";
 import type { ConsoleLog } from "@shared/schema";
 import type { Readable, Duplex } from "stream";
 
-/**
- * Управляет потоковой передачей логов из Docker контейнеров через WebSocket
- */
+
 export class LogStreamer {
   private logStreams: Map<string, Readable> = new Map();
-  private commandStreams: Map<string, Duplex> = new Map(); // Потоки для отправки команд
-  private subscribers: Map<string, Set<WebSocket>> = new Map(); // Отслеживаем подписчиков для каждого сервера
+  private commandStreams: Map<string, Duplex> = new Map(); 
+  private subscribers: Map<string, Set<WebSocket>> = new Map(); 
 
-  /**
-   * Начать стриминг логов для сервера
-   */
+  
   async startStreaming(serverId: string, ws: WebSocket, userId?: string): Promise<void> {
     try {
-      // Проверяем существование сервера и права доступа
+      
       const server = await storage.getServer(serverId);
       if (!server || !server.containerId) {
-        // Логируем попытку доступа к несуществующему серверу
+        
         if (userId) {
           await storage.addActivity({
             type: "security_event",
@@ -33,39 +29,39 @@ export class LogStreamer {
         return;
       }
 
-      // Проверяем права доступа через storage (только если userId предоставлен)
+      
       if (userId) {
         const user = await storage.getUser(userId);
         if (!user) {
           return;
         }
         
-        // Проверяем право просмотра серверов
+        
         if (!user.permissions.includes("servers.view")) {
           return;
         }
         
-        // Если allowedServerIds не null, проверяем доступ к конкретному серверу
+        
         if (user.allowedServerIds !== null) {
           if (!user.allowedServerIds || !user.allowedServerIds.includes(serverId)) {
             return;
           }
         }
-        // Если allowedServerIds === null, пользователь имеет доступ ко всем серверам
+        
       }
 
-      // Добавляем клиента в список подписчиков
+      
       if (!this.subscribers.has(serverId)) {
         this.subscribers.set(serverId, new Set());
       }
       this.subscribers.get(serverId)!.add(ws);
 
-      // Если уже стримим для этого сервера, просто добавляем подписчика
+      
       if (this.logStreams.has(serverId)) {
         return;
       }
 
-      // Проверяем статус сервера перед началом стриминга
+      
       if (server.status !== "running") {
         return;
       }
@@ -77,15 +73,15 @@ export class LogStreamer {
 
       const container = await dockerManager.getContainer(node, server.containerId);
       
-      // Получаем логи через attach API для реального стриминга
+      
       const logStream = await container.attach({
         stream: true,
         stdout: true,
         stderr: true,
-        logs: false, // Получаем только новые логи
+        logs: false, 
       }) as unknown as Readable;
 
-      // Обрабатываем поток данных
+      
       const dataHandler = (chunk: Buffer) => {
         const message = chunk.toString();
         const lines = message.split("\n").filter(line => line.trim());
@@ -98,7 +94,7 @@ export class LogStreamer {
               type: this.detectLogType(line),
             };
 
-            // Отправляем лог всем подписанным клиентам
+            
             this.broadcastLog(serverId, logEntry);
           }
         });
@@ -106,17 +102,17 @@ export class LogStreamer {
 
       const errorHandler = (error: Error) => {
         console.error(`Log stream error for server ${serverId}:`, error);
-        // Очищаем обработчики для предотвращения утечек памяти
+        
         logStream.removeAllListeners();
         this.stopStreaming(serverId);
       };
 
       const endHandler = () => {
         console.log(`Log stream ended for server ${serverId}`);
-        // Очищаем обработчики для предотвращения утечек памяти
+        
         logStream.removeAllListeners();
         this.logStreams.delete(serverId);
-        // Очищаем подписчиков
+        
         this.subscribers.delete(serverId);
       };
 
@@ -130,16 +126,14 @@ export class LogStreamer {
     }
   }
 
-  /**
-   * Остановить стриминг логов для сервера
-   */
+  
   stopStreaming(serverId: string, ws?: WebSocket): void {
-    // Удаляем клиента из списка подписчиков
+    
     if (ws) {
       const subscribers = this.subscribers.get(serverId);
       if (subscribers) {
         subscribers.delete(ws);
-        // Если больше нет подписчиков, останавливаем стриминг
+        
         if (subscribers.size === 0) {
           const stream = this.logStreams.get(serverId);
           if (stream) {
@@ -150,7 +144,7 @@ export class LogStreamer {
         }
       }
     } else {
-      // Если клиент не указан, останавливаем для всех
+      
       const stream = this.logStreams.get(serverId);
       if (stream) {
         stream.destroy();
@@ -160,10 +154,7 @@ export class LogStreamer {
     }
   }
 
-  /**
-   * Отправить команду в контейнер сервера
-   * Использует attach API для отправки команд в реальную консоль контейнера
-   */
+  
   async sendCommand(serverId: string, command: string, userId?: string): Promise<void> {
     try {
       const server = await storage.getServer(serverId);
@@ -171,7 +162,7 @@ export class LogStreamer {
         throw new Error("Server not found");
       }
 
-      // Проверяем права доступа через storage (только если userId предоставлен)
+      
       if (!userId) {
         throw new Error("User ID is required");
       }
@@ -181,18 +172,18 @@ export class LogStreamer {
         throw new Error("User not found");
       }
       
-      // Проверяем право управления серверами (для отправки команд)
+      
       if (!user.permissions.includes("servers.console")) {
         throw new Error("Access denied - no console permission");
       }
       
-      // Проверяем доступ к конкретному серверу
+      
       if (user.allowedServerIds !== null) {
         if (!user.allowedServerIds || !user.allowedServerIds.includes(serverId)) {
           throw new Error("Access denied - server not in allowed list");
         }
       }
-      // Если allowedServerIds === null, пользователь имеет доступ ко всем серверам
+      
 
       if (server.status !== "running") {
         throw new Error("Server is not running");
@@ -205,12 +196,11 @@ export class LogStreamer {
 
       const container = await dockerManager.getContainer(node, server.containerId);
       
-      // Используем attach API с stdin для отправки команд в реальную консоль
-      // Если поток для команд уже существует, используем его
+      
       let commandStream = this.commandStreams.get(serverId);
       
       if (!commandStream) {
-        // Создаем новый attach поток для отправки команд
+        
         const newCommandStream = await container.attach({
           stream: true,
           stdin: true,
@@ -220,7 +210,7 @@ export class LogStreamer {
         
         this.commandStreams.set(serverId, newCommandStream);
         
-        // Обрабатываем ответы от контейнера
+        
         const commandDataHandler = (chunk: Buffer) => {
           const message = chunk.toString();
           const lines = message.split("\n").filter(line => line.trim());
@@ -233,7 +223,7 @@ export class LogStreamer {
                 type: this.detectLogType(line),
               };
               
-              // Отправляем ответ всем подписанным клиентам
+              
               this.broadcastLog(serverId, logEntry);
             }
           });
@@ -261,7 +251,7 @@ export class LogStreamer {
         throw new Error("Command stream could not be initialized");
       }
       
-      // Отправляем команду в stdin контейнера
+      
       if (commandStream && commandStream.writable) {
         commandStream.write(command + "\n");
       } else {
@@ -273,16 +263,12 @@ export class LogStreamer {
     }
   }
 
-  /**
-   * Отправить лог всем подписанным клиентам
-   */
+  
   private broadcastLog(serverId: string, log: ConsoleLog): void {
     this.broadcastLogToClients(serverId, log);
   }
 
-  /**
-   * Определить тип лога по содержимому
-   */
+  
   private detectLogType(message: string): "info" | "error" | "warn" | "system" {
     const lower = message.toLowerCase();
     if (lower.includes("error") || lower.includes("exception") || lower.includes("fatal")) {
@@ -297,18 +283,14 @@ export class LogStreamer {
     return "info";
   }
 
-  /**
-   * Установить WebSocket server для трансляции логов
-   */
+  
   setWebSocketServer(wss: WebSocketServer): void {
     this.wss = wss;
   }
 
   private wss?: WebSocketServer;
 
-  /**
-   * Отправить лог всем клиентам, подписанным на сервер
-   */
+  
   broadcastLogToClients(serverId: string, log: ConsoleLog): void {
     if (!this.wss) return;
 

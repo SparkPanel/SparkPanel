@@ -66,6 +66,7 @@ interface User {
   allowedServerIds?: string[] | null;
   hasAllServerAccess?: boolean;
   isFullAccess?: boolean;
+  accessExpiresAt?: string | null;
   createdAt: Date;
 }
 
@@ -209,6 +210,17 @@ export default function UsersPage() {
     },
   });
 
+  const grantTempAccessMutation = useMutation({
+    mutationFn: ({ id, minutes }: { id: string; minutes: number }) =>
+      apiRequest("POST", `/api/users/${id}/temporary-access`, { durationMinutes: minutes }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/users"] }),
+  });
+
+  const revokeTempAccessMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/users/${id}/temporary-access`, {}),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/users"] }),
+  });
+
   const handleEdit = (user: User) => {
     setEditingUser(user);
     setEditDialogOpen(true);
@@ -271,6 +283,14 @@ export default function UsersPage() {
                   deleteUserMutation.mutate(user.id);
                 }
               }}
+              onGrantTemporaryAccess={() => {
+                const raw = prompt("Temporary access duration in minutes:", "60");
+                const minutes = Number(raw);
+                if (Number.isFinite(minutes) && minutes > 0) {
+                  grantTempAccessMutation.mutate({ id: user.id, minutes });
+                }
+              }}
+              onRevokeTemporaryAccess={() => revokeTempAccessMutation.mutate(user.id)}
               isDeleting={deleteUserMutation.isPending}
             />
           ))}
@@ -297,11 +317,15 @@ function UserCard({
   user,
   onEdit,
   onDelete,
+  onGrantTemporaryAccess,
+  onRevokeTemporaryAccess,
   isDeleting,
 }: {
   user: User;
   onEdit: () => void;
   onDelete: () => void;
+  onGrantTemporaryAccess: () => void;
+  onRevokeTemporaryAccess: () => void;
   isDeleting: boolean;
 }) {
   const permCounts = countPermissionsByCategory(user.permissions);
@@ -336,6 +360,11 @@ function UserCard({
                     All servers
                   </span>
                 )}
+                {user.accessExpiresAt && (
+                  <span className="text-xs text-amber-600">
+                    Temp until {new Date(user.accessExpiresAt).toLocaleString()}
+                  </span>
+                )}
               </CardDescription>
             </div>
           </div>
@@ -357,6 +386,15 @@ function UserCard({
             >
               <Trash2 className="w-4 h-4 text-destructive" />
             </Button>
+            {user.accessExpiresAt ? (
+              <Button variant="outline" size="sm" onClick={onRevokeTemporaryAccess}>
+                Revoke Temp
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" onClick={onGrantTemporaryAccess}>
+                Temp Access
+              </Button>
+            )}
           </div>
         </div>
         
@@ -675,6 +713,49 @@ function CreateUserForm({
               )}
             />
           )}
+
+          <FormField
+            control={form.control}
+            name="permissions"
+            render={() => (
+              <FormItem>
+                <div className="mb-4">
+                  <FormLabel className="text-base">Права доступа</FormLabel>
+                </div>
+                {userPermissions.map((permission) => (
+                  <FormField
+                    key={permission}
+                    control={form.control}
+                    name="permissions"
+                    render={({ field }) => {
+                      const meta = permissionMeta[permission];
+                      return (
+                        <FormItem
+                          key={permission}
+                          className="flex flex-row items-start space-x-3 space-y-0"
+                        >
+                          <FormControl>
+                            <Checkbox
+                              checked={field.value?.includes(permission)}
+                              onCheckedChange={(checked) => {
+                                return checked
+                                  ? field.onChange([...(field.value || []), permission])
+                                  : field.onChange(
+                                      field.value?.filter((value) => value !== permission)
+                                    );
+                              }}
+                            />
+                          </FormControl>
+                          <FormLabel className="font-normal">{meta?.label || permission}</FormLabel>
+                        </FormItem>
+                      );
+                    }}
+                  />
+                ))}
+                <FormMessage />
+              </FormItem>
+            )}
+          />
 
           <div className="flex justify-end gap-2 pt-4">
             <Button type="submit" disabled={isLoading} data-testid="button-submit-create-user">

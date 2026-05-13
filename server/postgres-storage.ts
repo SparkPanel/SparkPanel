@@ -9,10 +9,7 @@ import {
   backups,
   serverPorts,
   sftpUsers,
-  apiKeys,
   ddosSettings,
-  panelSettings,
-  twoFactorCodes,
   type User,
   type InsertUser,
   type Server,
@@ -29,17 +26,41 @@ import {
   type InsertServerPort,
   type SftpUser,
   type InsertSftpUser,
+  type DdosSettings,
+  type InsertDdosSettings,
+  type UserPermission,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 import type { IStorage } from "./storage";
 
-// In-memory stats (not persisted to DB, real-time only)
+
 const serverStatsCache = new Map<string, ServerStats>();
 const nodeStatsCache = new Map<string, NodeStats>();
 
+interface TwoFactorCode {
+  id: string;
+  userId: string;
+  code: string;
+  expiresAt: Date;
+}
+
+interface ApiKey {
+  id: string;
+  name: string;
+  description?: string;
+  key: string;
+  permissions: UserPermission[];
+  expiresAt: Date | null;
+  isActive: boolean;
+  createdBy: string;
+  createdAt: Date;
+}
+
 export class PostgresStorage implements IStorage {
   private db: ReturnType<typeof drizzle>;
+  private twoFactorCodes: Map<string, TwoFactorCode> = new Map();
+  private apiKeys: Map<string, ApiKey> = new Map();
   private panelSettings: {
     panelName: string;
     primaryColor?: string;
@@ -90,6 +111,7 @@ export class PostgresStorage implements IStorage {
           role: "admin",
           permissions: allPermissions as any,
           allowedServerIds: null,
+          accessExpiresAt: null,
         });
       }
     } catch (error) {
@@ -98,37 +120,13 @@ export class PostgresStorage implements IStorage {
   }
 
   private async loadPanelSettings(): Promise<void> {
-    try {
-      const result = await this.db.select().from(panelSettings).where(eq(panelSettings.id, "main")).limit(1);
-      if (result[0]) {
-        this.panelSettings = {
-          panelName: result[0].panelName,
-          primaryColor: result[0].primaryColor || undefined,
-          backgroundColor: result[0].backgroundColor || undefined,
-          borderColor: result[0].borderColor || undefined,
-          sidebarAccentColor: result[0].sidebarAccentColor || "#e5e7eb",
-        };
-      } else {
-        // Create default settings if not exist
-        await this.db.insert(panelSettings).values({
-          id: "main",
-          panelName: "SparkPanel v1.3.1",
-          sidebarAccentColor: "#e5e7eb",
-        });
-        this.panelSettings = {
-          panelName: "SparkPanel v1.3.1",
-          sidebarAccentColor: "#e5e7eb",
-        };
-      }
-    } catch (error) {
-      console.error("Error loading panel settings:", error);
-      this.panelSettings = {
-        panelName: "SparkPanel v1.3.1",
-      };
-    }
+    this.panelSettings = {
+      panelName: "SparkPanel v1.3.1",
+      sidebarAccentColor: "#e5e7eb",
+    };
   }
 
-  // Users
+  
   async getUser(id: string): Promise<User | undefined> {
     const result = await this.db.select().from(users).where(eq(users.id, id)).limit(1);
     return result[0];
@@ -168,6 +166,7 @@ export class PostgresStorage implements IStorage {
       twoFactorEnabled: user.twoFactorEnabled ?? false,
       telegramBotToken: user.telegramBotToken,
       telegramChatId: user.telegramChatId,
+      accessExpiresAt: user.accessExpiresAt ?? null,
     };
 
     await this.db.insert(users).values(newUser);
@@ -183,6 +182,7 @@ export class PostgresStorage implements IStorage {
     if (updates.twoFactorEnabled !== undefined) updateData.twoFactorEnabled = updates.twoFactorEnabled;
     if (updates.telegramBotToken !== undefined) updateData.telegramBotToken = updates.telegramBotToken;
     if (updates.telegramChatId !== undefined) updateData.telegramChatId = updates.telegramChatId;
+    if (updates.accessExpiresAt !== undefined) updateData.accessExpiresAt = updates.accessExpiresAt;
 
     await this.db.update(users).set(updateData).where(eq(users.id, id));
     return await this.getUser(id);
@@ -197,7 +197,7 @@ export class PostgresStorage implements IStorage {
     return result.rowCount ? result.rowCount > 0 : false;
   }
 
-  // Servers
+  
   async getAllServers(): Promise<Server[]> {
     return await this.db.select().from(servers);
   }
@@ -249,7 +249,7 @@ export class PostgresStorage implements IStorage {
   }
 
   async deleteServer(id: string): Promise<boolean> {
-    // Delete related backups, ports, and SFTP users
+    
     await this.db.delete(backups).where(eq(backups.serverId, id));
     await this.db.delete(serverPorts).where(eq(serverPorts.serverId, id));
     await this.db.delete(sftpUsers).where(eq(sftpUsers.serverId, id));
@@ -258,7 +258,7 @@ export class PostgresStorage implements IStorage {
     return result.rowCount ? result.rowCount > 0 : false;
   }
 
-  // Nodes
+  
   async getAllNodes(): Promise<Node[]> {
     return await this.db.select().from(nodes);
   }
@@ -297,7 +297,7 @@ export class PostgresStorage implements IStorage {
     return result.rowCount ? result.rowCount > 0 : false;
   }
 
-  // Stats (in-memory, not persisted)
+  
   setServerStats(id: string, stats: ServerStats): void {
     serverStatsCache.set(id, stats);
   }
@@ -322,7 +322,7 @@ export class PostgresStorage implements IStorage {
     return Object.fromEntries(nodeStatsCache);
   }
 
-  // Activity log
+  
   async addActivity(activity: Omit<Activity, "id">): Promise<Activity> {
     const id = randomUUID();
     await this.db.insert(activities).values({
@@ -350,13 +350,13 @@ export class PostgresStorage implements IStorage {
       type: r.type as ActivityType,
       title: r.title,
       description: r.description,
-      // Убеждаемся, что timestamp всегда является объектом Date
+      
       timestamp: r.timestamp instanceof Date ? r.timestamp : new Date(r.timestamp),
       userId: r.userId || undefined,
     }));
   }
 
-  // Backups
+  
   async getBackupsByServer(serverId: string): Promise<Backup[]> {
     return await this.db.select().from(backups).where(eq(backups.serverId, serverId));
   }
@@ -380,7 +380,7 @@ export class PostgresStorage implements IStorage {
     return result.rowCount ? result.rowCount > 0 : false;
   }
 
-  // Server Ports
+  
   async getPortsByServer(serverId: string): Promise<ServerPort[]> {
     return await this.db.select().from(serverPorts).where(eq(serverPorts.serverId, serverId));
   }
@@ -405,12 +405,12 @@ export class PostgresStorage implements IStorage {
   }
 
   async checkPortAvailable(port: number, excludeServerId?: string): Promise<boolean> {
-    // Check if port is used by any server's main port
+    
     const allServers = await this.getAllServers();
     const serverUsingPort = allServers.find(s => s.port === port && (!excludeServerId || s.id !== excludeServerId));
     if (serverUsingPort) return false;
 
-    // Check if port is used by any additional server ports (excluding the specified server)
+    
     const allPorts = await this.db
       .select()
       .from(serverPorts)
@@ -423,7 +423,7 @@ export class PostgresStorage implements IStorage {
     return !portInUse;
   }
 
-  // SFTP Users
+  
   async getSftpUsersByServer(serverId: string): Promise<SftpUser[]> {
     return await this.db.select().from(sftpUsers).where(eq(sftpUsers.serverId, serverId));
   }
@@ -458,7 +458,7 @@ export class PostgresStorage implements IStorage {
     return result.rowCount ? result.rowCount > 0 : false;
   }
 
-  // Panel Settings (stored in memory for now, can be moved to DB later)
+  
   async getPanelSettings(): Promise<{
     panelName: string;
     primaryColor?: string;
@@ -468,7 +468,6 @@ export class PostgresStorage implements IStorage {
   }> {
     return { ...this.panelSettings };
   }
-
   async updatePanelSettings(settings: {
     panelName?: string;
     primaryColor?: string;
@@ -482,183 +481,135 @@ export class PostgresStorage implements IStorage {
     borderColor?: string;
     sidebarAccentColor?: string;
   }> {
-    const updates: any = { updatedAt: new Date() };
-    if (settings.panelName !== undefined) {
-      this.panelSettings.panelName = settings.panelName;
-      updates.panelName = settings.panelName;
-    }
-    if (settings.primaryColor !== undefined) {
-      this.panelSettings.primaryColor = settings.primaryColor;
-      updates.primaryColor = settings.primaryColor;
-    }
-    if (settings.backgroundColor !== undefined) {
-      this.panelSettings.backgroundColor = settings.backgroundColor;
-      updates.backgroundColor = settings.backgroundColor;
-    }
-    if (settings.borderColor !== undefined) {
-      this.panelSettings.borderColor = settings.borderColor;
-      updates.borderColor = settings.borderColor;
-    }
-    if (settings.sidebarAccentColor !== undefined) {
-      this.panelSettings.sidebarAccentColor = settings.sidebarAccentColor;
-      updates.sidebarAccentColor = settings.sidebarAccentColor;
-    }
-    
-    try {
-      await this.db.update(panelSettings).set(updates).where(eq(panelSettings.id, "main"));
-    } catch (error) {
-      console.error("Error updating panel settings in database:", error);
-    }
-    
+    if (settings.panelName !== undefined) this.panelSettings.panelName = settings.panelName;
+    if (settings.primaryColor !== undefined) this.panelSettings.primaryColor = settings.primaryColor;
+    if (settings.backgroundColor !== undefined) this.panelSettings.backgroundColor = settings.backgroundColor;
+    if (settings.borderColor !== undefined) this.panelSettings.borderColor = settings.borderColor;
+    if (settings.sidebarAccentColor !== undefined) this.panelSettings.sidebarAccentColor = settings.sidebarAccentColor;
     return { ...this.panelSettings };
   }
 
-  // API Keys
-  async getAllApiKeys(): Promise<any[]> {
-    return await this.db.select().from(apiKeys);
-  }
-
-  async getApiKey(id: string): Promise<any | undefined> {
-    const result = await this.db.select().from(apiKeys).where(eq(apiKeys.id, id)).limit(1);
-    return result[0];
-  }
-
-  async getApiKeyByKey(key: string): Promise<any | undefined> {
-    const result = await this.db.select().from(apiKeys).where(eq(apiKeys.key, key)).limit(1);
-    return result[0];
-  }
-
-  async createApiKey(data: any): Promise<any> {
-    const id = randomUUID();
-    const newApiKey = {
-      id,
-      ...data,
-      createdAt: new Date(),
-      lastUsedAt: null,
-    };
-    await this.db.insert(apiKeys).values(newApiKey);
-    return this.getApiKey(id);
-  }
-
-  async updateApiKey(id: string, updates: any): Promise<any> {
-    await this.db.update(apiKeys).set({ ...updates, lastUsedAt: new Date() }).where(eq(apiKeys.id, id));
-    return this.getApiKey(id);
-  }
-
-  async deleteApiKey(id: string): Promise<boolean> {
-    const result = await this.db.delete(apiKeys).where(eq(apiKeys.id, id));
-    return result.rowCount ? result.rowCount > 0 : false;
-  }
-
-  // DDoS Settings
-  async getAllDdosSettings(): Promise<any[]> {
-    return await this.db.select().from(ddosSettings);
-  }
-
-  async getDdosSettings(id: string): Promise<any | undefined> {
-    const result = await this.db.select().from(ddosSettings).where(eq(ddosSettings.id, id)).limit(1);
-    return result[0];
-  }
-
-  async getDdosSettingsByTarget(targetType: string, targetId: string | null): Promise<any | undefined> {
+  async getDdosSettings(targetType: string, targetId?: string | null): Promise<DdosSettings | undefined> {
+    const where = targetId ? eq(ddosSettings.targetId, targetId) : eq(ddosSettings.targetId, null as any);
     const result = await this.db
       .select()
       .from(ddosSettings)
-      .where(
-        targetId
-          ? (and(eq(ddosSettings.targetType, targetType), eq(ddosSettings.targetId, targetId)))
-          : (and(eq(ddosSettings.targetType, targetType), isNull(ddosSettings.targetId)))
-      )
+      .where(and(eq(ddosSettings.targetType, targetType), where))
       .limit(1);
     return result[0];
   }
 
-  async createDdosSettings(data: any): Promise<any> {
-    const id = randomUUID();
-    const newSettings = {
-      id,
-      ...data,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    await this.db.insert(ddosSettings).values(newSettings);
-    return this.getDdosSettings(id);
+  async updateDdosSettings(
+    targetTypeOrId: string,
+    targetIdOrSettings: string | null | Partial<InsertDdosSettings>,
+    settingsArg?: Partial<InsertDdosSettings>,
+  ): Promise<DdosSettings> {
+    if (settingsArg === undefined && typeof targetIdOrSettings === "object" && targetIdOrSettings !== null) {
+      const existing = await this.db
+        .select()
+        .from(ddosSettings)
+        .where(eq(ddosSettings.id, targetTypeOrId))
+        .limit(1);
+      if (!existing[0]) {
+        throw new Error("DDoS settings not found");
+      }
+      const updateData = { ...targetIdOrSettings, updatedAt: new Date() };
+      await this.db.update(ddosSettings).set(updateData).where(eq(ddosSettings.id, targetTypeOrId));
+      const updated = await this.db.select().from(ddosSettings).where(eq(ddosSettings.id, targetTypeOrId)).limit(1);
+      return updated[0]!;
+    }
+
+    const targetType = targetTypeOrId;
+    const targetId = (targetIdOrSettings as string | null) ?? null;
+    const settings = settingsArg ?? {};
+
+    const where = targetId ? eq(ddosSettings.targetId, targetId) : eq(ddosSettings.targetId, null as any);
+    const existing = await this.db
+      .select()
+      .from(ddosSettings)
+      .where(and(eq(ddosSettings.targetType, targetType), where))
+      .limit(1);
+
+    const updateData: any = {};
+    if (settings.l3Enabled !== undefined) updateData.l3Enabled = settings.l3Enabled;
+    if (settings.l3MaxPacketsPerSecond !== undefined) updateData.l3MaxPacketsPerSecond = settings.l3MaxPacketsPerSecond;
+    if (settings.l3BlockDuration !== undefined) updateData.l3BlockDuration = settings.l3BlockDuration;
+    if (settings.l4Enabled !== undefined) updateData.l4Enabled = settings.l4Enabled;
+    if (settings.l4MaxConnectionsPerIp !== undefined) updateData.l4MaxConnectionsPerIp = settings.l4MaxConnectionsPerIp;
+    if (settings.l4SynFloodProtection !== undefined) updateData.l4SynFloodProtection = settings.l4SynFloodProtection;
+    if (settings.l7Enabled !== undefined) updateData.l7Enabled = settings.l7Enabled;
+    if (settings.l7MaxRequestsPerMinute !== undefined) updateData.l7MaxRequestsPerMinute = settings.l7MaxRequestsPerMinute;
+    if (settings.l7ChallengeMode !== undefined) updateData.l7ChallengeMode = settings.l7ChallengeMode;
+    if (settings.l7UserAgentBlocking !== undefined) updateData.l7UserAgentBlocking = settings.l7UserAgentBlocking;
+    if (settings.updatedBy !== undefined) updateData.updatedBy = settings.updatedBy;
+    updateData.updatedAt = new Date();
+
+    if (existing[0]) {
+      
+      await this.db.update(ddosSettings).set(updateData).where(eq(ddosSettings.id, existing[0].id));
+      return (await this.getDdosSettings(targetType, targetId))!;
+    } else {
+      
+      const id = randomUUID();
+      await this.db.insert(ddosSettings).values({
+        id,
+        targetType,
+        targetId: targetId || null,
+        ...updateData,
+      });
+      return (await this.getDdosSettings(targetType, targetId))!;
+    }
   }
 
-  async updateDdosSettings(id: string, updates: any): Promise<any> {
-    await this.db.update(ddosSettings).set({ ...updates, updatedAt: new Date() }).where(eq(ddosSettings.id, id));
-    return this.getDdosSettings(id);
+  async getDdosSettingsByTarget(targetType: string, targetId: string | null): Promise<DdosSettings | undefined> {
+    return this.getDdosSettings(targetType, targetId);
   }
 
-  async deleteDdosSettings(id: string): Promise<boolean> {
-    const result = await this.db.delete(ddosSettings).where(eq(ddosSettings.id, id));
-    return result.rowCount ? result.rowCount > 0 : false;
+  async createDdosSettings(setting: InsertDdosSettings): Promise<DdosSettings> {
+    return this.updateDdosSettings(setting.targetType, setting.targetId ?? null, setting);
   }
 
-  // 2FA Methods
-  async create2FACode(userId: string, code: string, expiresAt: Date): Promise<{ id: string; code: string }> {
-    const id = randomUUID();
-    await this.db.insert(twoFactorCodes).values({
-      id,
-      userId,
-      code,
-      expiresAt,
-    });
-    return { id, code };
+  async create2FACode(userId: string, code: string, expiresAt: Date): Promise<void> {
+    this.twoFactorCodes.set(userId, { id: randomUUID(), userId, code, expiresAt });
   }
 
   async verify2FACode(userId: string, code: string): Promise<boolean> {
-    const result = await this.db
-      .select()
-      .from(twoFactorCodes)
-      .where(and(eq(twoFactorCodes.userId, userId), eq(twoFactorCodes.code, code)))
-      .limit(1);
-    
-    if (!result[0]) return false;
-    
-    // Проверяем, не истёк ли код
-    if (new Date() > result[0].expiresAt) {
-      await this.db.delete(twoFactorCodes).where(eq(twoFactorCodes.id, result[0].id));
+    const stored = this.twoFactorCodes.get(userId);
+    if (!stored) return false;
+    if (stored.expiresAt.getTime() < Date.now()) {
+      this.twoFactorCodes.delete(userId);
       return false;
     }
-    
-    // Удаляем использованный код
-    await this.db.delete(twoFactorCodes).where(eq(twoFactorCodes.id, result[0].id));
-    return true;
+    const valid = stored.code === code;
+    if (valid) this.twoFactorCodes.delete(userId);
+    return valid;
   }
 
-  async get2FACode(userId: string): Promise<{ id: string; userId: string; code: string; expiresAt: Date } | undefined> {
-    const result = await this.db
-      .select()
-      .from(twoFactorCodes)
-      .where(eq(twoFactorCodes.userId, userId))
-      .limit(1);
-    
-    if (!result[0]) return undefined;
-    
-    // Проверяем, не истёк ли код
-    if (new Date() > result[0].expiresAt) {
-      await this.db.delete(twoFactorCodes).where(eq(twoFactorCodes.id, result[0].id));
-      return undefined;
-    }
-    
-    return result[0];
+  async getAllApiKeys(): Promise<ApiKey[]> {
+    return Array.from(this.apiKeys.values());
   }
 
-  async delete2FACode(codeId: string): Promise<boolean> {
-    const result = await this.db.delete(twoFactorCodes).where(eq(twoFactorCodes.id, codeId));
-    return result.rowCount ? result.rowCount > 0 : false;
+  async getApiKey(id: string): Promise<ApiKey | undefined> {
+    return this.apiKeys.get(id);
   }
 
-  async deleteExpired2FACodes(): Promise<void> {
-    // Удаляем истёкшие коды
-    await this.db.delete(twoFactorCodes).where(
-      lt(twoFactorCodes.expiresAt, new Date())
-    );
+  async createApiKey(apiKey: Omit<ApiKey, "id" | "createdAt">): Promise<ApiKey> {
+    const created: ApiKey = { ...apiKey, id: randomUUID(), createdAt: new Date() };
+    this.apiKeys.set(created.id, created);
+    return created;
   }
 
-  async updateApiKeyLastUsed(id: string): Promise<void> {
-    await this.db.update(apiKeys).set({ lastUsedAt: new Date() }).where(eq(apiKeys.id, id));
+  async updateApiKey(id: string, updates: Partial<ApiKey>): Promise<ApiKey | undefined> {
+    const existing = this.apiKeys.get(id);
+    if (!existing) return undefined;
+    const updated = { ...existing, ...updates };
+    this.apiKeys.set(id, updated);
+    return updated;
+  }
+
+  async deleteApiKey(id: string): Promise<boolean> {
+    return this.apiKeys.delete(id);
   }
 }
+
 

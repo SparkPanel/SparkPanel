@@ -1,9 +1,8 @@
-import { type User, type InsertUser, type Server, type InsertServer, type Node, type InsertNode, type ServerStats, type NodeStats, type Activity, type UserPermission, type UserRole, userPermissions, type Backup, type InsertBackup, type ServerPort, type InsertServerPort, type SftpUser, type InsertSftpUser, type ApiKey, type InsertApiKey, type DdosSettings, type InsertDdosSettings } from "@shared/schema";
+import { type User, type InsertUser, type Server, type InsertServer, type Node, type InsertNode, type ServerStats, type NodeStats, type Activity, type UserPermission, type UserRole, userPermissions, type Backup, type InsertBackup, type ServerPort, type InsertServerPort, type SftpUser, type InsertSftpUser, type DdosSettings, type InsertDdosSettings } from "@shared/schema";
 import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 
 export interface IStorage {
-  // Users
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   getAllUsers(): Promise<User[]>;
@@ -12,21 +11,18 @@ export interface IStorage {
   updateUserPassword(id: string, newPasswordHash: string): Promise<void>;
   deleteUser(id: string): Promise<boolean>;
 
-  // Servers
   getAllServers(): Promise<Server[]>;
   getServer(id: string): Promise<Server | undefined>;
   createServer(server: InsertServer): Promise<Server>;
   updateServer(id: string, updates: Partial<Server>): Promise<Server | undefined>;
   deleteServer(id: string): Promise<boolean>;
 
-  // Nodes
   getAllNodes(): Promise<Node[]>;
   getNode(id: string): Promise<Node | undefined>;
   createNode(node: InsertNode): Promise<Node>;
   updateNode(id: string, updates: Partial<Node>): Promise<Node | undefined>;
   deleteNode(id: string): Promise<boolean>;
 
-  // Stats (in-memory, not persisted)
   setServerStats(id: string, stats: ServerStats): void;
   getServerStats(id: string): ServerStats | undefined;
   getAllServerStats(): Record<string, ServerStats>;
@@ -34,57 +30,44 @@ export interface IStorage {
   getNodeStats(id: string): NodeStats | undefined;
   getAllNodeStats(): Record<string, NodeStats>;
 
-  // Activity log
   addActivity(activity: Omit<Activity, 'id'>): Promise<Activity>;
   getRecentActivities(limit?: number): Promise<Activity[]>;
 
-  // Backups
   getBackupsByServer(serverId: string): Promise<Backup[]>;
   getBackup(id: string): Promise<Backup | undefined>;
   createBackup(backup: InsertBackup): Promise<Backup>;
   deleteBackup(id: string): Promise<boolean>;
 
-  // Server Ports
   getPortsByServer(serverId: string): Promise<ServerPort[]>;
   getPort(id: string): Promise<ServerPort | undefined>;
   createPort(port: InsertServerPort): Promise<ServerPort>;
   deletePort(id: string): Promise<boolean>;
   checkPortAvailable(port: number, excludeServerId?: string): Promise<boolean>;
 
-  // SFTP Users
   getSftpUsersByServer(serverId: string): Promise<SftpUser[]>;
   getSftpUser(id: string): Promise<SftpUser | undefined>;
   createSftpUser(user: InsertSftpUser): Promise<SftpUser>;
   updateSftpUser(id: string, updates: Partial<SftpUser>): Promise<SftpUser | undefined>;
   deleteSftpUser(id: string): Promise<boolean>;
 
-  // Panel Settings
   getPanelSettings(): Promise<{ panelName: string; primaryColor?: string; backgroundColor?: string; borderColor?: string; sidebarAccentColor?: string }>;
   updatePanelSettings(settings: { panelName?: string; primaryColor?: string; backgroundColor?: string; borderColor?: string; sidebarAccentColor?: string }): Promise<{ panelName: string; primaryColor?: string; backgroundColor?: string; borderColor?: string; sidebarAccentColor?: string }>;
 
-  // API Keys
+  getDdosSettings(targetType: string, targetId?: string | null): Promise<DdosSettings | undefined>;
+  getDdosSettingsByTarget(targetType: string, targetId: string | null): Promise<DdosSettings | undefined>;
+  createDdosSettings(setting: InsertDdosSettings): Promise<DdosSettings>;
+  updateDdosSettings(
+    targetTypeOrId: string,
+    targetIdOrSettings: string | null | Partial<InsertDdosSettings>,
+    settingsArg?: Partial<InsertDdosSettings>,
+  ): Promise<DdosSettings>;
+  create2FACode(userId: string, code: string, expiresAt: Date): Promise<void>;
+  verify2FACode(userId: string, code: string): Promise<boolean>;
   getAllApiKeys(): Promise<ApiKey[]>;
   getApiKey(id: string): Promise<ApiKey | undefined>;
-  getApiKeyByKey(key: string): Promise<ApiKey | undefined>;
-  createApiKey(apiKey: InsertApiKey): Promise<ApiKey>;
+  createApiKey(apiKey: Omit<ApiKey, "id" | "createdAt">): Promise<ApiKey>;
   updateApiKey(id: string, updates: Partial<ApiKey>): Promise<ApiKey | undefined>;
   deleteApiKey(id: string): Promise<boolean>;
-  updateApiKeyLastUsed(id: string): Promise<void>;
-
-  // DDoS Settings
-  getAllDdosSettings(): Promise<DdosSettings[]>;
-  getDdosSettings(id: string): Promise<DdosSettings | undefined>;
-  getDdosSettingsByTarget(targetType: string, targetId: string | null): Promise<DdosSettings | undefined>;
-  createDdosSettings(settings: InsertDdosSettings): Promise<DdosSettings>;
-  updateDdosSettings(id: string, updates: Partial<DdosSettings>): Promise<DdosSettings | undefined>;
-  deleteDdosSettings(id: string): Promise<boolean>;
-
-  // 2FA Codes
-  create2FACode(userId: string, code: string, expiresAt: Date): Promise<{ id: string; code: string }>;
-  verify2FACode(userId: string, code: string): Promise<boolean>;
-  get2FACode(userId: string): Promise<{ id: string; userId: string; code: string; expiresAt: Date } | undefined>;
-  delete2FACode(codeId: string): Promise<boolean>;
-  deleteExpired2FACodes(): Promise<void>;
 }
 
 interface TwoFactorCode {
@@ -92,6 +75,18 @@ interface TwoFactorCode {
   userId: string;
   code: string;
   expiresAt: Date;
+}
+
+interface ApiKey {
+  id: string;
+  name: string;
+  description?: string;
+  key: string;
+  permissions: UserPermission[];
+  expiresAt: Date | null;
+  isActive: boolean;
+  createdBy: string;
+  createdAt: Date;
 }
 
 export class MemStorage implements IStorage {
@@ -104,9 +99,9 @@ export class MemStorage implements IStorage {
   private backups: Map<string, Backup>;
   private serverPorts: Map<string, ServerPort>;
   private sftpUsers: Map<string, SftpUser>;
-  private apiKeys: Map<string, ApiKey>;
   private ddosSettings: Map<string, DdosSettings>;
   private twoFactorCodes: Map<string, TwoFactorCode>;
+  private apiKeys: Map<string, ApiKey>;
 
   constructor() {
     this.users = new Map();
@@ -118,11 +113,10 @@ export class MemStorage implements IStorage {
     this.backups = new Map();
     this.serverPorts = new Map();
     this.sftpUsers = new Map();
-    this.apiKeys = new Map();
     this.ddosSettings = new Map();
     this.twoFactorCodes = new Map();
+    this.apiKeys = new Map();
 
-    // Initialize default user (adplayer/0000) - вызываем синхронно
     this.initializeDefaultUser().catch((err) => {
       console.error("Failed to initialize default user:", err);
     });
@@ -136,18 +130,19 @@ export class MemStorage implements IStorage {
       
       if (!existing) {
         const passwordHash = await bcrypt.hash(defaultPassword, 10);
-        // Создаём пользователя со всеми правами доступа
+        
         const user: User = {
           id: randomUUID(),
           username: defaultUsername,
           password: passwordHash,
           nickname: null,
-          role: "custom", // Роль теперь информационная, основной контроль через permissions
-          permissions: [...userPermissions], // Все права
-          allowedServerIds: null, // Доступ ко всем серверам
+          role: "custom", 
+          permissions: [...userPermissions], 
+          allowedServerIds: null, 
           twoFactorEnabled: false,
           telegramBotToken: null,
           telegramChatId: null,
+          accessExpiresAt: null,
           createdAt: new Date(),
         };
         this.users.set(user.id, user);
@@ -159,7 +154,7 @@ export class MemStorage implements IStorage {
     }
   }
 
-  // Users
+  
   async getUser(id: string): Promise<User | undefined> {
     return this.users.get(id);
   }
@@ -177,7 +172,7 @@ export class MemStorage implements IStorage {
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = randomUUID();
     
-    // Обрабатываем permissions - может быть Json из базы данных
+    
     let permissions: UserPermission[] = [];
     if (Array.isArray(insertUser.permissions)) {
       permissions = insertUser.permissions.filter((p): p is UserPermission => 
@@ -185,7 +180,7 @@ export class MemStorage implements IStorage {
       );
     }
     
-    // Обрабатываем allowedServerIds - может быть Json из базы данных
+    
     let allowedServerIds: string[] | null = null;
     if (insertUser.allowedServerIds !== undefined && insertUser.allowedServerIds !== null) {
       if (Array.isArray(insertUser.allowedServerIds)) {
@@ -204,6 +199,7 @@ export class MemStorage implements IStorage {
       twoFactorEnabled: insertUser.twoFactorEnabled ?? false,
       telegramBotToken: insertUser.telegramBotToken || null,
       telegramChatId: insertUser.telegramChatId || null,
+      accessExpiresAt: insertUser.accessExpiresAt ?? null,
       createdAt: new Date(),
     };
     this.users.set(id, user);
@@ -216,7 +212,7 @@ export class MemStorage implements IStorage {
       return undefined;
     }
     
-    // Обрабатываем permissions
+    
     let permissions: UserPermission[] = user.permissions;
     if (updates.permissions !== undefined) {
       if (Array.isArray(updates.permissions)) {
@@ -226,7 +222,7 @@ export class MemStorage implements IStorage {
       }
     }
     
-    // Обрабатываем allowedServerIds
+    
     let allowedServerIds: string[] | null = user.allowedServerIds;
     if (updates.allowedServerIds !== undefined) {
       if (updates.allowedServerIds === null) {
@@ -258,7 +254,7 @@ export class MemStorage implements IStorage {
     return this.users.delete(id);
   }
 
-  // Servers
+  
   async getAllServers(): Promise<Server[]> {
     return Array.from(this.servers.values());
   }
@@ -297,7 +293,7 @@ export class MemStorage implements IStorage {
   async deleteServer(id: string): Promise<boolean> {
     const deleted = this.servers.delete(id);
     if (deleted) {
-      // Удаляем связанные данные
+      
       for (const [userId, user] of this.users.entries()) {
         if (user.allowedServerIds && Array.isArray(user.allowedServerIds)) {
           const filtered = user.allowedServerIds.filter((serverId) => serverId !== id);
@@ -306,17 +302,17 @@ export class MemStorage implements IStorage {
           }
         }
       }
-      // Удаляем бекапы
+      
       const backups = await this.getBackupsByServer(id);
       for (const backup of backups) {
         this.backups.delete(backup.id);
       }
-      // Удаляем порты
+      
       const ports = await this.getPortsByServer(id);
       for (const port of ports) {
         this.serverPorts.delete(port.id);
       }
-      // Удаляем SFTP пользователей
+      
       const sftpUsers = await this.getSftpUsersByServer(id);
       for (const sftpUser of sftpUsers) {
         this.sftpUsers.delete(sftpUser.id);
@@ -325,7 +321,7 @@ export class MemStorage implements IStorage {
     return deleted;
   }
 
-  // Nodes
+  
   async getAllNodes(): Promise<Node[]> {
     return Array.from(this.nodes.values());
   }
@@ -361,7 +357,7 @@ export class MemStorage implements IStorage {
     return this.nodes.delete(id);
   }
 
-  // Stats
+  
   setServerStats(id: string, stats: ServerStats): void {
     this.serverStats.set(id, stats);
   }
@@ -394,14 +390,14 @@ export class MemStorage implements IStorage {
     return stats;
   }
 
-  // Activity log
+  
   async addActivity(activity: Omit<Activity, 'id'>): Promise<Activity> {
     const newActivity: Activity = {
       ...activity,
       id: randomUUID(),
     };
     this.activities.unshift(newActivity);
-    // Keep only last 100 activities
+    
     if (this.activities.length > 100) {
       this.activities = this.activities.slice(0, 100);
     }
@@ -412,7 +408,7 @@ export class MemStorage implements IStorage {
     return this.activities.slice(0, limit);
   }
 
-  // Backups
+  
   async getBackupsByServer(serverId: string): Promise<Backup[]> {
     return Array.from(this.backups.values()).filter(b => b.serverId === serverId);
   }
@@ -439,7 +435,7 @@ export class MemStorage implements IStorage {
     return this.backups.delete(id);
   }
 
-  // Server Ports
+  
   async getPortsByServer(serverId: string): Promise<ServerPort[]> {
     return Array.from(this.serverPorts.values()).filter(p => p.serverId === serverId);
   }
@@ -468,22 +464,22 @@ export class MemStorage implements IStorage {
   }
 
   async checkPortAvailable(port: number, excludeServerId?: string): Promise<boolean> {
-    // Проверяем, не используется ли порт другим сервером или портом
+    
     const allServers = Array.from(this.servers.values());
     const allPorts = Array.from(this.serverPorts.values());
     
-    // Проверяем основной порт серверов
+    
     const serverUsingPort = allServers.find(s => s.port === port && s.id !== excludeServerId);
     if (serverUsingPort) return false;
     
-    // Проверяем дополнительные порты
+    
     const portInUse = allPorts.find(p => p.port === port && p.serverId !== excludeServerId);
     if (portInUse) return false;
     
     return true;
   }
 
-  // SFTP Users
+  
   async getSftpUsersByServer(serverId: string): Promise<SftpUser[]> {
     return Array.from(this.sftpUsers.values()).filter(u => u.serverId === serverId);
   }
@@ -520,13 +516,13 @@ export class MemStorage implements IStorage {
     return this.sftpUsers.delete(id);
   }
 
-  // Panel Settings
+  
   private panelSettings: { panelName: string; primaryColor?: string; backgroundColor?: string; borderColor?: string; sidebarAccentColor?: string } = {
     panelName: "SparkPanel",
-    primaryColor: undefined, // По умолчанию используется тема
-    backgroundColor: undefined, // По умолчанию используется тема
-    borderColor: undefined, // По умолчанию используется тема
-    sidebarAccentColor: undefined, // По умолчанию используется тема
+    primaryColor: undefined, 
+    backgroundColor: undefined, 
+    borderColor: undefined, 
+    sidebarAccentColor: undefined, 
   };
 
   async getPanelSettings(): Promise<{ panelName: string; primaryColor?: string; backgroundColor?: string; borderColor?: string; sidebarAccentColor?: string }> {
@@ -538,7 +534,98 @@ export class MemStorage implements IStorage {
     return { ...this.panelSettings };
   }
 
-  // API Keys
+  async getDdosSettings(targetType: string, targetId?: string | null): Promise<DdosSettings | undefined> {
+    const key = targetId ? `${targetType}_${targetId}` : targetType;
+    return this.ddosSettings.get(key);
+  }
+
+  async updateDdosSettings(
+    targetTypeOrId: string,
+    targetIdOrSettings: string | null | Partial<InsertDdosSettings>,
+    settingsArg?: Partial<InsertDdosSettings>,
+  ): Promise<DdosSettings> {
+    if (settingsArg === undefined && typeof targetIdOrSettings === "object" && targetIdOrSettings !== null) {
+      const existing = Array.from(this.ddosSettings.values()).find((value) => value.id === targetTypeOrId);
+      if (!existing) {
+        throw new Error("DDoS settings not found");
+      }
+      const key = existing.targetId ? `${existing.targetType}_${existing.targetId}` : existing.targetType;
+      const updated = { ...existing, ...targetIdOrSettings } as DdosSettings;
+      this.ddosSettings.set(key, updated);
+      return updated;
+    }
+
+    const targetType = targetTypeOrId;
+    const targetId = (targetIdOrSettings as string | null) ?? null;
+    const settings = settingsArg ?? {};
+    const key = targetId ? `${targetType}_${targetId}` : targetType;
+    const existing = await this.getDdosSettings(targetType, targetId);
+    let updated: DdosSettings;
+    
+    if (existing) {
+      
+      updated = { ...existing, ...settings };
+    } else {
+      
+      updated = {
+        id: randomUUID(),
+        targetType,
+        targetId,
+        l3Enabled: false,
+        l3MaxPacketsPerSecond: null,
+        l3BlockDuration: null,
+        l4Enabled: false,
+        l4MaxConnectionsPerIp: null,
+        l4SynFloodProtection: false,
+        l7Enabled: false,
+        l7MaxRequestsPerMinute: null,
+        l7ChallengeMode: false,
+        l7UserAgentBlocking: false,
+        updatedAt: new Date(),
+        updatedBy: null,
+        ...settings,
+      };
+    }
+    
+    this.ddosSettings.set(key, updated);
+    return updated;
+  }
+
+  async getDdosSettingsByTarget(targetType: string, targetId: string | null): Promise<DdosSettings | undefined> {
+    return this.getDdosSettings(targetType, targetId);
+  }
+
+  async getAllDdosSettings(): Promise<DdosSettings[]> {
+    return Array.from(this.ddosSettings.values());
+  }
+
+  async createDdosSettings(setting: InsertDdosSettings): Promise<DdosSettings> {
+    return this.updateDdosSettings(setting.targetType, setting.targetId ?? null, setting);
+  }
+
+  async create2FACode(userId: string, code: string, expiresAt: Date): Promise<void> {
+    this.twoFactorCodes.set(userId, {
+      id: randomUUID(),
+      userId,
+      code,
+      expiresAt,
+    });
+  }
+
+  async verify2FACode(userId: string, code: string): Promise<boolean> {
+    const stored = this.twoFactorCodes.get(userId);
+    if (!stored) return false;
+    if (stored.expiresAt.getTime() < Date.now()) {
+      this.twoFactorCodes.delete(userId);
+      return false;
+    }
+    const isValid = stored.code === code;
+    if (isValid) {
+      this.twoFactorCodes.delete(userId);
+    }
+    return isValid;
+  }
+
   async getAllApiKeys(): Promise<ApiKey[]> {
     return Array.from(this.apiKeys.values());
   }
@@ -547,31 +634,20 @@ export class MemStorage implements IStorage {
     return this.apiKeys.get(id);
   }
 
-  async getApiKeyByKey(key: string): Promise<ApiKey | undefined> {
-    return Array.from(this.apiKeys.values()).find(k => k.key === key);
-  }
-
-  async createApiKey(apiKey: InsertApiKey): Promise<ApiKey> {
+  async createApiKey(apiKey: Omit<ApiKey, "id" | "createdAt">): Promise<ApiKey> {
     const newApiKey: ApiKey = {
+      ...apiKey,
       id: randomUUID(),
-      name: apiKey.name,
-      key: apiKey.key,
-      description: apiKey.description ?? null,
-      permissions: apiKey.permissions ?? [],
-      isActive: apiKey.isActive ?? true,
-      expiresAt: apiKey.expiresAt ?? null,
-      lastUsedAt: null,
       createdAt: new Date(),
-      createdBy: apiKey.createdBy,
     };
     this.apiKeys.set(newApiKey.id, newApiKey);
     return newApiKey;
   }
 
   async updateApiKey(id: string, updates: Partial<ApiKey>): Promise<ApiKey | undefined> {
-    const apiKey = this.apiKeys.get(id);
-    if (!apiKey) return undefined;
-    const updated = { ...apiKey, ...updates };
+    const existing = this.apiKeys.get(id);
+    if (!existing) return undefined;
+    const updated = { ...existing, ...updates };
     this.apiKeys.set(id, updated);
     return updated;
   }
@@ -579,128 +655,7 @@ export class MemStorage implements IStorage {
   async deleteApiKey(id: string): Promise<boolean> {
     return this.apiKeys.delete(id);
   }
-
-  async updateApiKeyLastUsed(id: string): Promise<void> {
-    const apiKey = this.apiKeys.get(id);
-    if (apiKey) {
-      apiKey.lastUsedAt = new Date();
-      this.apiKeys.set(id, apiKey);
-    }
-  }
-
-  // DDoS Settings
-  async getAllDdosSettings(): Promise<DdosSettings[]> {
-    return Array.from(this.ddosSettings.values());
-  }
-
-  async getDdosSettings(id: string): Promise<DdosSettings | undefined> {
-    return this.ddosSettings.get(id);
-  }
-
-  async getDdosSettingsByTarget(targetType: string, targetId: string | null): Promise<DdosSettings | undefined> {
-    return Array.from(this.ddosSettings.values()).find(
-      s => s.targetType === targetType && s.targetId === targetId
-    );
-  }
-
-  async createDdosSettings(settings: InsertDdosSettings): Promise<DdosSettings> {
-    const newSettings: DdosSettings = {
-      id: randomUUID(),
-      targetType: settings.targetType,
-      targetId: settings.targetId ?? null,
-      l3Enabled: settings.l3Enabled ?? false,
-      l3MaxPacketsPerSecond: settings.l3MaxPacketsPerSecond ?? null,
-      l3BlockDuration: settings.l3BlockDuration ?? null,
-      l4Enabled: settings.l4Enabled ?? false,
-      l4MaxConnectionsPerIp: settings.l4MaxConnectionsPerIp ?? null,
-      l4SynFloodProtection: settings.l4SynFloodProtection ?? false,
-      l7Enabled: settings.l7Enabled ?? false,
-      l7MaxRequestsPerMinute: settings.l7MaxRequestsPerMinute ?? null,
-      l7ChallengeMode: settings.l7ChallengeMode ?? false,
-      l7UserAgentBlocking: settings.l7UserAgentBlocking ?? false,
-      updatedAt: new Date(),
-      updatedBy: settings.updatedBy ?? null,
-    };
-    this.ddosSettings.set(newSettings.id, newSettings);
-    return newSettings;
-  }
-
-  async updateDdosSettings(id: string, updates: Partial<DdosSettings>): Promise<DdosSettings | undefined> {
-    const settings = this.ddosSettings.get(id);
-    if (!settings) return undefined;
-    const updated = { ...settings, ...updates, updatedAt: new Date() };
-    this.ddosSettings.set(id, updated);
-    return updated;
-  }
-
-  async deleteDdosSettings(id: string): Promise<boolean> {
-    return this.ddosSettings.delete(id);
-  }
-
-  // 2FA Codes
-  async create2FACode(userId: string, code: string, expiresAt: Date): Promise<{ id: string; code: string }> {
-    const id = randomUUID();
-    const twoFactorCode: TwoFactorCode = {
-      id,
-      userId,
-      code,
-      expiresAt,
-    };
-    this.twoFactorCodes.set(id, twoFactorCode);
-    return { id, code };
-  }
-
-  async verify2FACode(userId: string, code: string): Promise<boolean> {
-    for (const twoFACode of this.twoFactorCodes.values()) {
-      if (twoFACode.userId === userId && twoFACode.code === code && twoFACode.expiresAt > new Date()) {
-        this.twoFactorCodes.delete(twoFACode.id);
-        return true;
-      }
-    }
-    return false;
-  }
-
-  async get2FACode(userId: string): Promise<{ id: string; userId: string; code: string; expiresAt: Date } | undefined> {
-    for (const code of this.twoFactorCodes.values()) {
-      if (code.userId === userId && code.expiresAt > new Date()) {
-        return code;
-      }
-    }
-    return undefined;
-  }
-
-  async delete2FACode(codeId: string): Promise<boolean> {
-    return this.twoFactorCodes.delete(codeId);
-  }
-
-  async deleteExpired2FACodes(): Promise<void> {
-    const now = new Date();
-    for (const [id, code] of this.twoFactorCodes.entries()) {
-      if (code.expiresAt <= now) {
-        this.twoFactorCodes.delete(id);
-      }
-    }
-  }
 }
 
-// Выбираем хранилище в зависимости от наличия DATABASE_URL
-// Если DATABASE_URL установлен - используем PostgreSQL, иначе - in-memory
-let storage: IStorage;
-
-if (process.env.DATABASE_URL) {
-  try {
-    const { PostgresStorage } = await import("./postgres-storage");
-    storage = new PostgresStorage(process.env.DATABASE_URL);
-    console.log("[storage] Using PostgreSQL storage");
-  } catch (error) {
-    console.error("[storage] Failed to initialize PostgreSQL storage, falling back to in-memory:", error);
-    storage = new MemStorage();
-    console.log("[storage] Using in-memory storage (fallback)");
-  }
-} else {
-  storage = new MemStorage();
-  console.log("[storage] Using in-memory storage (DATABASE_URL not set)");
-  console.log("[storage] Note: Data will not persist between restarts. Set DATABASE_URL to enable PostgreSQL.");
-}
-
-export { storage };
+// Initialize default storage instance
+export const storage: IStorage = new MemStorage();

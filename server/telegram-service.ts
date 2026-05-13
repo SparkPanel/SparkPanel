@@ -44,7 +44,7 @@ export class TelegramService {
   }
 
   async getChatId(token: string): Promise<string | null> {
-    // Проверяем кэш
+    
     const cached = this.chatIdCache.get(token);
     if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
       return cached.chatId;
@@ -60,7 +60,7 @@ export class TelegramService {
         const update = response.result[response.result.length - 1] as TelegramUpdate;
         if (update.message?.chat?.id) {
           const chatId = update.message.chat.id.toString();
-          // Кэшируем chatId
+          
           this.chatIdCache.set(token, {
             chatId,
             timestamp: Date.now(),
@@ -137,7 +137,7 @@ export class TelegramService {
         return null;
       }
 
-      // Ищем последнее сообщение с кодом подтверждения
+      
       for (let i = response.result.length - 1; i >= 0; i--) {
         const update = response.result[i] as TelegramUpdate;
         if (update.message?.text) {
@@ -145,15 +145,15 @@ export class TelegramService {
           const pending = this.pendingCodes.get(token);
           
           if (pending && messageCode === pending.code) {
-            // Код совпадает!
+            
             if (update.message.chat?.id) {
               const chatId = update.message.chat.id.toString();
-              // Сохраняем Chat ID в кэш
+              
               this.chatIdCache.set(token, {
                 chatId,
                 timestamp: Date.now(),
               });
-              // Удаляем использованный код
+              
               this.pendingCodes.delete(token);
               return chatId;
             }

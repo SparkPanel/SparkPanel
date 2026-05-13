@@ -1,6 +1,4 @@
-/**
- * Типы для системы плагинов
- */
+
 
 export interface PluginManifest {
   id: string;

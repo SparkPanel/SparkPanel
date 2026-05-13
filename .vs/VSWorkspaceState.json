@@ -1,0 +1,14 @@
+{
+  "ExpandedNodes": [
+    "",
+    "\\attached_assets",
+    "\\client",
+    "\\plugins",
+    "\\plugins\\example-plugin",
+    "\\server",
+    "\\server\\types",
+    "\\shared"
+  ],
+  "SelectedNode": "\\README.md",
+  "PreviewInSolutionExplorer": false
+}

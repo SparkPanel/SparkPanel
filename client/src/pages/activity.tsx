@@ -41,6 +41,8 @@ const iconMap: Record<ActivityType, LucideIcon> = {
   profile_update: Settings,
   "2fa_enable": ShieldCheck,
   "2fa_disable": ShieldX,
+  settings_update: Settings,
+  sftp_user_update: Key,
   security_event: ShieldAlert,
 };
 
@@ -48,10 +50,10 @@ const activityTypeGroups: Record<string, ActivityType[]> = {
   "Server": ["server_start", "server_stop", "server_restart", "server_create", "server_delete", "server_command"],
   "Backup": ["backup_create", "backup_restore", "backup_delete"],
   "Network": ["port_create", "port_delete"],
-  "SFTP": ["sftp_user_create", "sftp_user_delete"],
+  "SFTP": ["sftp_user_create", "sftp_user_update", "sftp_user_delete"],
   "Node": ["node_add", "node_delete"],
   "User": ["user_login", "password_change", "user_create", "user_update", "user_delete", "profile_update"],
-  "Security": ["2fa_enable", "2fa_disable", "security_event"],
+  "Security": ["2fa_enable", "2fa_disable", "settings_update", "security_event"],
 };
 
 export default function ActivityPage() {

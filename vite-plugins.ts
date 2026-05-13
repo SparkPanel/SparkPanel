@@ -1,4 +1,3 @@
-// Development plugin wrappers
 export async function getRuntimeErrorOverlay() {
   const module = await import("@replit/vite-plugin-runtime-error-modal");
   return module.default;

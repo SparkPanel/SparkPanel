@@ -51,9 +51,13 @@ export function sanitizePath(path: string): string {
     normalizedPath = normalizedPath.replace(/\/+$/, "");
   }
 
-  
-  if (normalizedPath.includes("..") || normalizedPath.includes("./") || normalizedPath.includes("../")) {
-    throw new Error("Path traversal detected");
+  // Block path traversal: only detect ".." as a standalone path segment, not as a
+  // substring within filenames like "file..txt". We also block leading "../" or "./".
+  const segments = normalizedPath.split("/");
+  for (const segment of segments) {
+    if (segment === ".." || segment === ".") {
+      throw new Error("Path traversal detected");
+    }
   }
 
   

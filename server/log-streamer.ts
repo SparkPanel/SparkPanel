@@ -109,11 +109,11 @@ export class LogStreamer {
 
       const endHandler = () => {
         console.log(`Log stream ended for server ${serverId}`);
-        
+        // Clean up the log stream, but keep the subscriber set so that
+        // reconnecting clients (or stats code that starts a new stream)
+        // can rejoin without losing their registration.
         logStream.removeAllListeners();
         this.logStreams.delete(serverId);
-        
-        this.subscribers.delete(serverId);
       };
 
       logStream.on("data", dataHandler);

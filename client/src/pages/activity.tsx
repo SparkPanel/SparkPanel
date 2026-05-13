@@ -128,11 +128,6 @@ export default function ActivityPage() {
     setSelectedServer("all");
   };
 
-  // Получаем уникальные типы активности
-  const allActivityTypes = Object.keys(activityTypeGroups).concat(
-    Object.values(activityTypeGroups).flat().filter((type, index, arr) => arr.indexOf(type) === index)
-  );
-
   return (
     <div className="p-6 space-y-6">
       <div>
@@ -181,7 +176,6 @@ export default function ActivityPage() {
                 {Object.keys(activityTypeGroups).map(group => (
                   <SelectItem key={group} value={group}>{group}</SelectItem>
                 ))}
-                <SelectItem value="divider" disabled>──────────</SelectItem>
                 {Object.values(activityTypeGroups).flat().filter((type, index, arr) => arr.indexOf(type) === index).map(type => (
                   <SelectItem key={type} value={type}>{type.replace(/_/g, " ")}</SelectItem>
                 ))}

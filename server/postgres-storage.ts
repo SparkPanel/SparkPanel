@@ -143,9 +143,9 @@ export class PostgresStorage implements IStorage {
 
   async createUser(user: InsertUser): Promise<User> {
     const id = randomUUID();
-    const passwordHash = typeof user.password === "string" 
-      ? await bcrypt.hash(user.password, 10)
-      : user.password;
+    // Password should already be hashed by the caller (routes.ts hashes with bcrypt).
+    // Do not re-hash to avoid double-hashing.
+    const passwordHash = user.password;
     
     const permissions: string[] = Array.isArray(user.permissions) 
       ? user.permissions.filter((p): p is string => typeof p === "string")
@@ -159,7 +159,7 @@ export class PostgresStorage implements IStorage {
       id,
       username: user.username,
       password: passwordHash,
-      role: "viewer",
+      role: (user.role as string) || "viewer",
       permissions: permissions as any,
       allowedServerIds: allowedServerIds,
       nickname: user.nickname,
@@ -490,7 +490,7 @@ export class PostgresStorage implements IStorage {
   }
 
   async getDdosSettings(targetType: string, targetId?: string | null): Promise<DdosSettings | undefined> {
-    const where = targetId ? eq(ddosSettings.targetId, targetId) : eq(ddosSettings.targetId, null as any);
+    const where = targetId ? eq(ddosSettings.targetId, targetId) : isNull(ddosSettings.targetId);
     const result = await this.db
       .select()
       .from(ddosSettings)
@@ -523,7 +523,7 @@ export class PostgresStorage implements IStorage {
     const targetId = (targetIdOrSettings as string | null) ?? null;
     const settings = settingsArg ?? {};
 
-    const where = targetId ? eq(ddosSettings.targetId, targetId) : eq(ddosSettings.targetId, null as any);
+    const where = targetId ? eq(ddosSettings.targetId, targetId) : isNull(ddosSettings.targetId);
     const existing = await this.db
       .select()
       .from(ddosSettings)

@@ -44,6 +44,7 @@ import { logSecurityEvent, isSuspiciousCommand, isSuspiciousPath, isDangerousFil
 import { pluginManager } from "./plugins/plugin-manager";
 import { telegramService } from "./telegram-service";
 import { ddosProtection } from "./ddos-protection";
+import { spawn } from "child_process";
 import multer from "multer";
 import AdmZip from "adm-zip";
 import { join } from "path";
@@ -51,7 +52,6 @@ import { existsSync, mkdirSync, createWriteStream } from "fs";
 import { createReadStream } from "fs";
 import { pipeline } from "stream/promises";
 import { readFile as readFilePromise, writeFile as writeFilePromise, unlink as unlinkPromise } from "fs/promises";
-import { registerDdosRoutes } from "./ddos-routes";
 
 const MemoryStore = memorystore(session);
 
@@ -338,6 +338,12 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
+    // API key authentication bypasses CSRF since it is not vulnerable to CSRF attacks
+    // (no browser cookies involved).
+    if (req.headers["x-api-key"]) {
+      return next();
+    }
+
     const csrfToken = (req.headers["x-csrf-token"] as string) || (req.body && req.body._csrf);
       
       if (!csrfToken || !verifyCSRFToken(req.sessionID, csrfToken)) {
@@ -360,7 +366,49 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
 
   
   const requireAuth = (req: Request, res: Response, next: Function) => {
-    
+    // Support API Key authentication via X-API-Key header as an alternative to session cookies.
+    const apiKeyHeader = req.headers["x-api-key"];
+    if (apiKeyHeader && typeof apiKeyHeader === "string") {
+      storage
+        .getAllApiKeys()
+        .then(async (keys) => {
+          const key = keys.find((k) => k.key === apiKeyHeader);
+          if (!key) {
+            return res.status(401).json({ message: "Invalid API key" });
+          }
+          if (!key.isActive) {
+            return res.status(403).json({ message: "API key is not active" });
+          }
+          if (key.expiresAt && new Date(key.expiresAt).getTime() <= Date.now()) {
+            return res.status(403).json({ message: "API key has expired" });
+          }
+
+          // Build a virtual user with the API key's permissions so downstream
+          // permission checks work consistently.
+          const virtualUser: User = {
+            id: key.createdBy,
+            username: `apikey:${key.name}`,
+            password: "",
+            nickname: null,
+            role: "admin",
+            permissions: key.permissions,
+            allowedServerIds: null,
+            twoFactorEnabled: false,
+            telegramBotToken: null,
+            telegramChatId: null,
+            accessExpiresAt: null,
+            createdAt: new Date(),
+          };
+          req.currentUser = virtualUser;
+          next();
+        })
+        .catch((error) => {
+          console.error("API key lookup error:", error);
+          res.status(500).json({ message: "Failed to verify API key" });
+        });
+      return;
+    }
+
     if (!req.session || !req.session.userId) {
       
       if (process.env.NODE_ENV === "development" && req.session && !req.session.userId) {
@@ -1247,9 +1295,32 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           });
         }
       } else if (isZip && file.originalname.toLowerCase().endsWith(".tar.gz")) {
-        
-        await unlinkPromise(file.path).catch(() => {});
-        return res.status(400).json({ message: "TAR.GZ archives are not yet supported. Please use ZIP format." });
+        // Extract .tar.gz archive using the system tar utility. We spawn a child
+        // process and pipe the archive file via -xzf.
+        try {
+          await new Promise<void>((resolve, reject) => {
+            const tar = spawn("tar", ["-xzf", file.path, "-C", pluginPath], {
+              stdio: ["ignore", "pipe", "pipe"],
+            });
+            let stderr = "";
+            tar.stderr.on("data", (chunk: Buffer) => {
+              stderr += chunk.toString();
+            });
+            tar.on("error", (err) => reject(err));
+            tar.on("close", (code) => {
+              if (code === 0) {
+                resolve();
+              } else {
+                reject(new Error(`tar exited with code ${code}: ${stderr.trim() || "unknown error"}`));
+              }
+            });
+          });
+        } catch (tarError: any) {
+          await unlinkPromise(file.path).catch(() => {});
+          return res.status(400).json({
+            message: `Failed to extract TAR.GZ archive: ${tarError?.message || "Invalid archive"}`,
+          });
+        }
       } else {
         
         const finalPath = join(pluginPath, file.originalname);
@@ -1785,6 +1856,114 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
     } catch (error) {
       console.error("Create server error:", error);
       res.status(400).json({ message: "Invalid request" });
+    }
+  });
+
+  app.patch("/api/servers/:id", requireAuth, requirePermission("servers.config"), requireCSRF, checkServerAccess, async (req, res) => {
+    try {
+      if (!isValidUUID(req.params.id)) {
+        return res.status(400).json({ message: "Invalid server ID format" });
+      }
+
+      const server = await storage.getServer(req.params.id);
+      if (!server) {
+        return res.status(404).json({ message: "Server not found" });
+      }
+
+      const allowedUpdateFields: (keyof Server)[] = [
+        "name",
+        "port",
+        "cpuLimit",
+        "ramLimit",
+        "diskLimit",
+        "autoStart",
+        "config",
+        "visibility",
+        "limits",
+      ];
+
+      const updates: Partial<Server> = {};
+      for (const field of allowedUpdateFields) {
+        if (req.body[field] !== undefined) {
+          (updates as any)[field] = req.body[field];
+        }
+      }
+
+      // Validate fields
+      if (updates.name !== undefined) {
+        if (typeof updates.name !== "string" || updates.name.trim().length === 0) {
+          return res.status(400).json({ message: "Server name cannot be empty" });
+        }
+        if (updates.name.length > 100) {
+          return res.status(400).json({ message: "Server name must be 100 characters or less" });
+        }
+        updates.name = updates.name.trim();
+      }
+
+      if (updates.port !== undefined) {
+        const port = Number(updates.port);
+        if (!Number.isInteger(port) || port < 1 || port > 65535) {
+          return res.status(400).json({ message: "Port must be between 1 and 65535" });
+        }
+        updates.port = port;
+      }
+
+      if (updates.cpuLimit !== undefined) {
+        const cpu = Number(updates.cpuLimit);
+        if (!Number.isFinite(cpu) || cpu <= 0 || cpu > 1000) {
+          return res.status(400).json({ message: "CPU limit must be between 1 and 1000 (percent)" });
+        }
+        updates.cpuLimit = Math.round(cpu);
+      }
+
+      if (updates.ramLimit !== undefined) {
+        const ram = Number(updates.ramLimit);
+        if (!Number.isFinite(ram) || ram <= 0 || ram > 1024) {
+          return res.status(400).json({ message: "RAM limit must be between 1 and 1024 GB" });
+        }
+        updates.ramLimit = Math.round(ram);
+      }
+
+      if (updates.diskLimit !== undefined) {
+        const disk = Number(updates.diskLimit);
+        if (!Number.isFinite(disk) || disk <= 0 || disk > 10240) {
+          return res.status(400).json({ message: "Disk limit must be between 1 and 10240 GB" });
+        }
+        updates.diskLimit = Math.round(disk);
+      }
+
+      if (updates.autoStart !== undefined) {
+        updates.autoStart = Boolean(updates.autoStart);
+      }
+
+      const updatedServer = await storage.updateServer(req.params.id, updates);
+      if (!updatedServer) {
+        return res.status(404).json({ message: "Server not found" });
+      }
+
+      try {
+        await pluginManager.callHook("server_update", updatedServer.id, {
+          id: updatedServer.id,
+          name: updatedServer.name,
+          updates,
+          updatedBy: req.currentUser?.id,
+        });
+      } catch (error) {
+        console.error("Error calling server_update hook:", error);
+      }
+
+      await storage.addActivity({
+        type: "server_command",
+        title: "Server Settings Updated",
+        description: `Server '${updatedServer.name}' settings were updated`,
+        timestamp: new Date(),
+        userId: req.currentUser?.id,
+      }).catch(() => {});
+
+      res.json(updatedServer);
+    } catch (error: any) {
+      console.error("Update server error:", error);
+      res.status(500).json({ message: error.message || "Failed to update server" });
     }
   });
 
@@ -3419,21 +3598,38 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
           try {
             const node = await storage.getNode(server.nodeId);
             if (node) {
-              
+              // We only have access to the plain-text password during this request
+              // (we never store it in the DB). Therefore, if the user is being
+              // renamed or the password is changed, we must have a password to
+              // set up the container user. If only the home directory changed
+              // and no new password was supplied, we still need a password to
+              // (re)create the OS user; in that case we skip the container sync
+              // and ask the caller to change the password to re-sync.
               if (updates.username && updates.username !== sftpUser.username) {
-                await removeSftpUserFromContainer(node, server.containerId, sftpUser.username);
-                await setupSftpUserInContainer(node, server.containerId, {
-                  username: updates.username,
-                  password: password || "changeme123", 
-                  homeDirectory: updates.homeDirectory || sftpUser.homeDirectory,
-                });
-              } else if (updates.password || updates.homeDirectory) {
-                
+                if (!password) {
+                  console.warn(
+                    "SFTP rename without password change cannot sync container user; " +
+                    "a new password is required. Container user not updated."
+                  );
+                } else {
+                  await removeSftpUserFromContainer(node, server.containerId, sftpUser.username);
+                  await setupSftpUserInContainer(node, server.containerId, {
+                    username: updates.username,
+                    password,
+                    homeDirectory: updates.homeDirectory || sftpUser.homeDirectory,
+                  });
+                }
+              } else if (updates.password) {
                 await setupSftpUserInContainer(node, server.containerId, {
                   username: updatedUser.username,
-                  password: password || "changeme123", 
+                  password,
                   homeDirectory: updates.homeDirectory || sftpUser.homeDirectory,
                 });
+              } else if (updates.homeDirectory) {
+                console.warn(
+                  "SFTP home directory change without password cannot be fully synced " +
+                  "to the container. Re-enter the password to apply changes."
+                );
               }
             }
           } catch (error: any) {
@@ -4351,7 +4547,9 @@ export async function registerRoutes(app: Express): Promise<HTTPServer> {
   });
 
   
-  registerDdosRoutes(app, requireAuth, requirePermission, requireCSRF);
+  // DDoS settings routes are defined inline above (see /api/ddos-settings/panel and
+  // /api/ddos-settings/server/:serverId). The previous standalone ddos-routes file
+  // was removed to avoid duplicate route registration with conflicting permissions.
 
   return httpServer;
 }
@@ -4606,122 +4804,73 @@ async function setupSftpUserInContainer(
   containerId: string,
   user: { username: string; password: string; homeDirectory: string }
 ): Promise<void> {
-  try {
-    const container = await dockerManager.getContainer(node, containerId);
-    
-    const safeUsername = user.username.replace(/[^a-zA-Z0-9_-]/g, "");
-    
-    
-    const removeUserScript = `
-      if id -u "${safeUsername}" &> /dev/null; then
-        userdel -r "${safeUsername}" 2>/dev/null || true
-      fi
-    `;
+  const container = await dockerManager.getContainer(node, containerId);
 
-    const removeExec = await container.exec({
-      Cmd: ["/bin/sh", "-c", removeUserScript],
+  const safeUsername = user.username.replace(/[^a-zA-Z0-9_-]/g, "");
+  if (!safeUsername) {
+    throw new Error("Invalid SFTP username");
+  }
+
+  // Helper: start exec and wait for end (with timeout) - returns true on natural end, false on timeout.
+  const runExec = async (script: string, timeoutMs: number = 5000): Promise<void> => {
+    const exec = await container.exec({
+      Cmd: ["/bin/sh", "-c", script],
       AttachStdout: true,
       AttachStderr: true,
       User: "root",
     });
-
-    await removeExec.start({ hijack: true, stdin: false });
-    await new Promise<void>((resolve) => {
-      const timeoutId = setTimeout(() => resolve(), 5000); 
-      
-    });
-
-    
-    const setupUserScript = `
-      # Создаем пользователя если его нет
-      if ! id -u "${safeUsername}" &> /dev/null; then
-        useradd -m -d "/data" -s /usr/sbin/nologin "${safeUsername}" 2>/dev/null || true
-      fi
-      
-      # Устанавливаем пароль
-      echo "${safeUsername}:${user.password}" | chpasswd 2>/dev/null || true
-    `;
-
-    const setupExec = await container.exec({
-      Cmd: ["/bin/sh", "-c", setupUserScript],
-      AttachStdout: true,
-      AttachStderr: true,
-      User: "root",
-    });
-
-    const setupStream = await setupExec.start({ hijack: true, stdin: false });
+    const stream = await exec.start({ hijack: true, stdin: false });
     await new Promise<void>((resolve) => {
       let timeoutId: NodeJS.Timeout | null = null;
       const cleanup = () => {
-        if (timeoutId) clearTimeout(timeoutId);
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
       };
-      setupStream.on("end", () => {
+      (stream as any).on("end", () => {
         cleanup();
         resolve();
       });
-      setupStream.on("error", (err) => {
+      (stream as any).on("error", () => {
         cleanup();
         resolve();
       });
       timeoutId = setTimeout(() => {
         cleanup();
         resolve();
-      }, 5000);
+      }, timeoutMs);
     });
+  };
 
-    
+  try {
+    // Remove any existing user to start clean.
+    await runExec(
+      `if id -u "${safeUsername}" >/dev/null 2>&1; then userdel -r "${safeUsername}" 2>/dev/null || true; fi`
+    );
+
+    // Create the user and set password. Password is passed via stdin-style heredoc
+    // using printf + chpasswd for safety (avoid shell metacharacters in password).
+    const passwordEscaped = user.password.replace(/'/g, "'\\''");
+    await runExec(
+      `useradd -m -d "/data" -s /usr/sbin/nologin "${safeUsername}" 2>/dev/null || true; ` +
+        `printf '%s:%s' '${safeUsername}' '${passwordEscaped}' | chpasswd 2>/dev/null || true`
+    );
+
+    // Configure sshd_config for the user, ensuring we don't add duplicate blocks.
+    const matchMarker = `# SPARKPANEL_SFTP_USER:${safeUsername}`;
     const sshConfigScript = `
-      # Создаем директорию для SSH конфигурации если её нет
       mkdir -p /etc/ssh/sshd_config.d 2>/dev/null || true
-      
-      # Добавляем конфигурацию для SFTP пользователя
-      if ! grep -q "Match User ${safeUsername}" /etc/ssh/sshd_config 2>/dev/null; then
-        echo "" >> /etc/ssh/sshd_config
-        echo "Match User ${safeUsername}" >> /etc/ssh/sshd_config
-        echo "  ForceCommand internal-sftp" >> /etc/ssh/sshd_config
-        echo "  ChrootDirectory /data" >> /etc/ssh/sshd_config
-        echo "  PermitTunnel no" >> /etc/ssh/sshd_config
-        echo "  AllowAgentForwarding no" >> /etc/ssh/sshd_config
-        echo "  AllowTcpForwarding no" >> /etc/ssh/sshd_config
-        echo "  X11Forwarding no" >> /etc/ssh/sshd_config
+      if ! grep -q "${matchMarker}" /etc/ssh/sshd_config 2>/dev/null; then
+        printf '\\n%s\\nMatch User %s\\n  ForceCommand internal-sftp\\n  ChrootDirectory /data\\n  PermitTunnel no\\n  AllowAgentForwarding no\\n  AllowTcpForwarding no\\n  X11Forwarding no\\n' "${matchMarker}" "${safeUsername}" >> /etc/ssh/sshd_config
       fi
-      
-      # Запускаем SSH сервер если он не запущен
-      if ! pgrep -x sshd > /dev/null; then
-        /usr/sbin/sshd -D &
+      if ! pgrep -x sshd >/dev/null 2>&1; then
+        /usr/sbin/sshd 2>/dev/null || true
       else
-        # Перезагружаем конфигурацию SSH
         pkill -HUP sshd 2>/dev/null || true
       fi
     `;
-
-    const sshConfigExec = await container.exec({
-      Cmd: ["/bin/sh", "-c", sshConfigScript],
-      AttachStdout: true,
-      AttachStderr: true,
-      User: "root",
-    });
-
-    const sshConfigStream = await sshConfigExec.start({ hijack: true, stdin: false });
-    await new Promise<void>((resolve) => {
-      let timeoutId: NodeJS.Timeout | null = null;
-      const cleanup = () => {
-        if (timeoutId) clearTimeout(timeoutId);
-      };
-      sshConfigStream.on("end", () => {
-        cleanup();
-        resolve();
-      });
-      sshConfigStream.on("error", () => {
-        cleanup();
-        resolve();
-      });
-      timeoutId = setTimeout(() => {
-        cleanup();
-        resolve();
-      }, 10000);
-    });
-
+    await runExec(sshConfigScript, 10000);
   } catch (error: any) {
     console.error("Error setting up SFTP user in container:", error);
     throw error;
@@ -4734,53 +4883,56 @@ async function removeSftpUserFromContainer(
   containerId: string,
   username: string
 ): Promise<void> {
+  const container = await dockerManager.getContainer(node, containerId);
+  const safeUsername = username.replace(/[^a-zA-Z0-9_-]/g, "");
+  if (!safeUsername) {
+    return;
+  }
+
+  const runExec = async (script: string, timeoutMs: number = 5000): Promise<void> => {
+    const exec = await container.exec({
+      Cmd: ["/bin/sh", "-c", script],
+      AttachStdout: true,
+      AttachStderr: true,
+      User: "root",
+    });
+    const stream = await exec.start({ hijack: true, stdin: false });
+    await new Promise<void>((resolve) => {
+      let timeoutId: NodeJS.Timeout | null = null;
+      const cleanup = () => {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+      };
+      (stream as any).on("end", () => {
+        cleanup();
+        resolve();
+      });
+      (stream as any).on("error", () => {
+        cleanup();
+        resolve();
+      });
+      timeoutId = setTimeout(() => {
+        cleanup();
+        resolve();
+      }, timeoutMs);
+    });
+  };
+
   try {
-    const container = await dockerManager.getContainer(node, containerId);
-    
-    const safeUsername = username.replace(/[^a-zA-Z0-9_-]/g, "");
-    
-    
-    const removeUserScript = `
-      if id -u "${safeUsername}" &> /dev/null; then
-        userdel -r "${safeUsername}" 2>/dev/null || true
-      fi
-    `;
+    await runExec(
+      `if id -u "${safeUsername}" >/dev/null 2>&1; then userdel -r "${safeUsername}" 2>/dev/null || true; fi`
+    );
 
-    const removeExec = await container.exec({
-      Cmd: ["/bin/sh", "-c", removeUserScript],
-      AttachStdout: true,
-      AttachStderr: true,
-      User: "root",
-    });
-
-    await removeExec.start({ hijack: true, stdin: false });
-    await new Promise<void>((resolve) => {
-      const timeoutId = setTimeout(() => resolve(), 5000); 
-      
-    });
-
-    
-    const sshConfigRemoveScript = `
-      # Удаляем конфигурацию SSH для пользователя
-      if [ -f /etc/ssh/sshd_config ]; then
-        sed -i '/Match User ${safeUsername}/,/X11Forwarding no/d' /etc/ssh/sshd_config 2>/dev/null || true
-        pkill -HUP sshd 2>/dev/null || true
-      fi
-    `;
-
-    const sshConfigRemoveExec = await container.exec({
-      Cmd: ["/bin/sh", "-c", sshConfigRemoveScript],
-      AttachStdout: true,
-      AttachStderr: true,
-      User: "root",
-    });
-
-    await sshConfigRemoveExec.start({ hijack: true, stdin: false });
-    await new Promise<void>((resolve) => {
-      const timeoutId = setTimeout(() => resolve(), 5000); 
-      
-    });
-
+    // Remove the configuration block previously added by setupSftpUserInContainer.
+    const matchMarker = `# SPARKPANEL_SFTP_USER:${safeUsername}`;
+    await runExec(
+      `if [ -f /etc/ssh/sshd_config ]; then ` +
+        `sed -i "/${matchMarker}/,/X11Forwarding no/d" /etc/ssh/sshd_config 2>/dev/null || true; ` +
+        `pkill -HUP sshd 2>/dev/null || true; ` +
+      `fi`
+    );
   } catch (error: any) {
     console.error("Error removing SFTP user from container:", error);
     throw error;

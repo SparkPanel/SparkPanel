@@ -714,49 +714,6 @@ function CreateUserForm({
             />
           )}
 
-          <FormField
-            control={form.control}
-            name="permissions"
-            render={() => (
-              <FormItem>
-                <div className="mb-4">
-                  <FormLabel className="text-base">Права доступа</FormLabel>
-                </div>
-                {userPermissions.map((permission) => (
-                  <FormField
-                    key={permission}
-                    control={form.control}
-                    name="permissions"
-                    render={({ field }) => {
-                      const meta = permissionMeta[permission];
-                      return (
-                        <FormItem
-                          key={permission}
-                          className="flex flex-row items-start space-x-3 space-y-0"
-                        >
-                          <FormControl>
-                            <Checkbox
-                              checked={field.value?.includes(permission)}
-                              onCheckedChange={(checked) => {
-                                return checked
-                                  ? field.onChange([...(field.value || []), permission])
-                                  : field.onChange(
-                                      field.value?.filter((value) => value !== permission)
-                                    );
-                              }}
-                            />
-                          </FormControl>
-                          <FormLabel className="font-normal">{meta?.label || permission}</FormLabel>
-                        </FormItem>
-                      );
-                    }}
-                  />
-                ))}
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
           <div className="flex justify-end gap-2 pt-4">
             <Button type="submit" disabled={isLoading} data-testid="button-submit-create-user">
               {isLoading ? "Creating..." : "Create User"}

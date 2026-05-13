@@ -103,6 +103,20 @@ export class VdsTerminal {
         this.broadcastOutput(userId, `\n[Process exited with code ${code}]\n`);
         this.terminalProcesses.delete(userId);
         this.broadcastOutput(userId, "[Terminal session ended]\n");
+        // Notify subscribers that the session ended so the UI can reconnect.
+        const subscribers = this.terminalSubscribers.get(userId);
+        if (subscribers) {
+          subscribers.forEach((subscriberWs) => {
+            if (subscriberWs.readyState === WebSocket.OPEN) {
+              subscriberWs.send(
+                JSON.stringify({
+                  type: "vds_terminal_disconnected",
+                  code,
+                })
+              );
+            }
+          });
+        }
       });
 
       

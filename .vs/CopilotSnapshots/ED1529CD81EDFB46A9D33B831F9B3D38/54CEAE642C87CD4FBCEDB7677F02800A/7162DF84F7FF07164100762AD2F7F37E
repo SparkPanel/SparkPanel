@@ -1,0 +1,149 @@
+﻿// DDoS Protection Settings Routes
+import type { Express, Request, Response } from "express";
+import { storage } from "./storage";
+import { isValidUUID } from "./security";
+import type { UserPermission } from "@shared/schema";
+
+export function registerDdosRoutes(
+  app: Express,
+  requireAuth: (req: Request, res: Response, next: Function) => void,
+  requirePermission: (permission: UserPermission) => (req: Request, res: Response, next: Function) => void,
+  requireCSRF: (req: Request, res: Response, next: Function) => Promise<void>,
+) {
+  // Get DDoS settings for panel or specific server
+  app.get("/api/ddos-settings/:type", requireAuth, requirePermission("servers.manage"), async (req, res) => {
+    try {
+      const { type } = req.params;
+      
+      if (type === "panel") {
+        const settings = await storage.getDdosSettings("panel");
+        return res.json(settings || {
+          id: "panel-default",
+          targetType: "panel",
+          targetId: null,
+          l3Enabled: false,
+          l3MaxPacketsPerSecond: null,
+          l3BlockDuration: null,
+          l4Enabled: false,
+          l4MaxConnectionsPerIp: null,
+          l4SynFloodProtection: false,
+          l7Enabled: false,
+          l7MaxRequestsPerMinute: null,
+          l7ChallengeMode: false,
+          l7UserAgentBlocking: false,
+          updatedAt: new Date(),
+          updatedBy: null,
+        });
+      } else if (type === "server") {
+        const serverId = req.query.serverId as string;
+        if (!serverId || !isValidUUID(serverId)) {
+          return res.status(400).json({ message: "Invalid server ID" });
+        }
+        
+        const server = await storage.getServer(serverId);
+        if (!server) {
+          return res.status(404).json({ message: "Server not found" });
+        }
+        
+        const settings = await storage.getDdosSettings("server", serverId);
+        return res.json(settings || {
+          id: `server-${serverId}-default`,
+          targetType: "server",
+          targetId: serverId,
+          l3Enabled: false,
+          l3MaxPacketsPerSecond: null,
+          l3BlockDuration: null,
+          l4Enabled: false,
+          l4MaxConnectionsPerIp: null,
+          l4SynFloodProtection: false,
+          l7Enabled: false,
+          l7MaxRequestsPerMinute: null,
+          l7ChallengeMode: false,
+          l7UserAgentBlocking: false,
+          updatedAt: new Date(),
+          updatedBy: null,
+        });
+      } else {
+        return res.status(400).json({ message: "Invalid type. Use 'panel' or 'server'" });
+      }
+    } catch (error: any) {
+      console.error("Get DDoS settings error:", error);
+      res.status(500).json({ message: "Failed to get DDoS settings" });
+    }
+  });
+
+  // Update DDoS settings for panel
+  app.put("/api/ddos-settings/panel", requireAuth, requirePermission("servers.manage"), requireCSRF, async (req, res) => {
+    try {
+      const settings = await storage.updateDdosSettings("panel", null, {
+        l3Enabled: req.body.l3Enabled,
+        l3MaxPacketsPerSecond: req.body.l3MaxPacketsPerSecond,
+        l3BlockDuration: req.body.l3BlockDuration,
+        l4Enabled: req.body.l4Enabled,
+        l4MaxConnectionsPerIp: req.body.l4MaxConnectionsPerIp,
+        l4SynFloodProtection: req.body.l4SynFloodProtection,
+        l7Enabled: req.body.l7Enabled,
+        l7MaxRequestsPerMinute: req.body.l7MaxRequestsPerMinute,
+        l7ChallengeMode: req.body.l7ChallengeMode,
+        l7UserAgentBlocking: req.body.l7UserAgentBlocking,
+        updatedBy: req.currentUser?.id,
+      });
+
+      await storage.addActivity({
+        type: "settings_update",
+        title: "DDoS Settings Updated",
+        description: "Panel DDoS protection settings were updated",
+        timestamp: new Date(),
+        userId: req.currentUser?.id,
+      });
+
+      res.json(settings);
+    } catch (error: any) {
+      console.error("Update DDoS settings error:", error);
+      res.status(500).json({ message: "Failed to update DDoS settings" });
+    }
+  });
+
+  // Update DDoS settings for specific server
+  app.put("/api/ddos-settings/server/:serverId", requireAuth, requirePermission("servers.manage"), requireCSRF, async (req, res) => {
+    try {
+      const { serverId } = req.params;
+      
+      if (!isValidUUID(serverId)) {
+        return res.status(400).json({ message: "Invalid server ID format" });
+      }
+      
+      const server = await storage.getServer(serverId);
+      if (!server) {
+        return res.status(404).json({ message: "Server not found" });
+      }
+
+      const settings = await storage.updateDdosSettings("server", serverId, {
+        l3Enabled: req.body.l3Enabled,
+        l3MaxPacketsPerSecond: req.body.l3MaxPacketsPerSecond,
+        l3BlockDuration: req.body.l3BlockDuration,
+        l4Enabled: req.body.l4Enabled,
+        l4MaxConnectionsPerIp: req.body.l4MaxConnectionsPerIp,
+        l4SynFloodProtection: req.body.l4SynFloodProtection,
+        l7Enabled: req.body.l7Enabled,
+        l7MaxRequestsPerMinute: req.body.l7MaxRequestsPerMinute,
+        l7ChallengeMode: req.body.l7ChallengeMode,
+        l7UserAgentBlocking: req.body.l7UserAgentBlocking,
+        updatedBy: req.currentUser?.id,
+      });
+
+      await storage.addActivity({
+        type: "settings_update",
+        title: "Server DDoS Settings Updated",
+        description: `DDoS protection settings updated for server '${server.name}'`,
+        timestamp: new Date(),
+        userId: req.currentUser?.id,
+      });
+
+      res.json(settings);
+    } catch (error: any) {
+      console.error("Update server DDoS settings error:", error);
+      res.status(500).json({ message: "Failed to update DDoS settings" });
+    }
+  });
+}

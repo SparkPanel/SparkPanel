@@ -1,0 +1,14 @@
+node_modules
+dist
+.DS_Store
+server/public
+vite.config.ts.*
+*.tar.gz
+.local
+plugins/*
+!plugins/.gitkeep
+!plugins/example-plugin
+temp-uploads
+attached_assets
+package-lock.json
+.env

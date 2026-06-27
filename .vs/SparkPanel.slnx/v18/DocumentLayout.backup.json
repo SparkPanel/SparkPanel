@@ -1,0 +1,620 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\Users\\mivod\\Desktop\\SparkPanel\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\package.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:package.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\README.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:README.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\shared\\schema.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:shared\\schema.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\client\\src\\pages\\api.tsx||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:client\\src\\pages\\api.tsx||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\routes.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:server\\routes.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\package-lock.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:package-lock.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\LICENSE||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:LICENSE||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\storage.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:server\\storage.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\postgres-storage.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:server\\postgres-storage.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\QUICK_START.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:QUICK_START.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\vite.config.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:vite.config.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\vite-plugins.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:vite-plugins.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\tsconfig.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:tsconfig.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\tailwind.config.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:tailwind.config.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\postcss.config.js||{14D17961-FE51-464D-9111-C4AF11D7D99A}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:postcss.config.js||{14D17961-FE51-464D-9111-C4AF11D7D99A}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\drizzle.config.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:drizzle.config.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\components.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:components.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\.gitignore||{3B902123-F8A7-4915-9F01-361F908088D0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:.gitignore||{3B902123-F8A7-4915-9F01-361F908088D0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\shared\\plugin-types.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:shared\\plugin-types.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\vite.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:server\\vite.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\vds-terminal.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:server\\vds-terminal.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\telegram-service.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:server\\telegram-service.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\stats-collector.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:server\\stats-collector.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\security.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:server\\security.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\security-logger.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:server\\security-logger.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\log-streamer.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:server\\log-streamer.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\index.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:server\\index.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\docker-manager.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:server\\docker-manager.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\ddos-routes.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:server\\ddos-routes.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\ddos-protection.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:server\\ddos-protection.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\csrf.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:server\\csrf.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\types\\express.d.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:server\\types\\express.d.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\types\\express-session.d.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:server\\types\\express-session.d.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\plugins\\example-plugin\\index.js||{14D17961-FE51-464D-9111-C4AF11D7D99A}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:plugins\\example-plugin\\index.js||{14D17961-FE51-464D-9111-C4AF11D7D99A}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\client\\index.html||{40D31677-CBC0-4297-A9EF-89D907823A98}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:client\\index.html||{40D31677-CBC0-4297-A9EF-89D907823A98}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\client\\src\\pages\\anti-ddos.tsx||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:client\\src\\pages\\anti-ddos.tsx||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\mivod\\Desktop\\SparkPanel\\client\\src\\lib\\queryClient.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:client\\src\\lib\\queryClient.ts||{0F2454B1-A556-402D-A7D0-1FDE7F99DEE0}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 3,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "api.tsx",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\client\\src\\pages\\api.tsx",
+              "RelativeDocumentMoniker": "client\\src\\pages\\api.tsx",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\client\\src\\pages\\api.tsx",
+              "RelativeToolTip": "client\\src\\pages\\api.tsx",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-19T21:04:35.414Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "schema.ts",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\shared\\schema.ts",
+              "RelativeDocumentMoniker": "shared\\schema.ts",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\shared\\schema.ts",
+              "RelativeToolTip": "shared\\schema.ts",
+              "ViewState": "AgIAAJEBAAAAAAAAAAAAALUBAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-08T09:23:10.726Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "README.md",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\README.md",
+              "RelativeDocumentMoniker": "README.md",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\README.md",
+              "RelativeToolTip": "README.md",
+              "ViewState": "AgIAALkBAAAAAAAAAAAAAMcBAAALAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001818|",
+              "WhenOpened": "2026-02-08T10:20:22.793Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "package.json",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\package.json",
+              "RelativeDocumentMoniker": "package.json",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\package.json",
+              "RelativeToolTip": "package.json",
+              "ViewState": "AgIAACQAAAAAAAAAAAAIwAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
+              "WhenOpened": "2026-02-08T11:55:14.403Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "routes.ts",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\routes.ts",
+              "RelativeDocumentMoniker": "server\\routes.ts",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\routes.ts",
+              "RelativeToolTip": "server\\routes.ts",
+              "ViewState": "AgIAAHMQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-08T09:32:12.762Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "package-lock.json",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\package-lock.json",
+              "RelativeDocumentMoniker": "package-lock.json",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\package-lock.json",
+              "RelativeToolTip": "package-lock.json",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
+              "WhenOpened": "2026-02-08T11:55:05.071Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 6,
+              "Title": "LICENSE",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\LICENSE",
+              "RelativeDocumentMoniker": "LICENSE",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\LICENSE",
+              "RelativeToolTip": "LICENSE",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
+              "WhenOpened": "2026-02-08T11:55:04.371Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 36,
+              "Title": "queryClient.ts",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\client\\src\\lib\\queryClient.ts",
+              "RelativeDocumentMoniker": "client\\src\\lib\\queryClient.ts",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\client\\src\\lib\\queryClient.ts",
+              "RelativeToolTip": "client\\src\\lib\\queryClient.ts",
+              "ViewState": "AgIAAHYAAAAAAAAAAABBwAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-19T21:04:59.704Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 7,
+              "Title": "storage.ts",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\storage.ts",
+              "RelativeDocumentMoniker": "server\\storage.ts",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\storage.ts",
+              "RelativeToolTip": "server\\storage.ts",
+              "ViewState": "AgIAABICAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-08T09:23:34.662Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 9,
+              "Title": "QUICK_START.md",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\QUICK_START.md",
+              "RelativeDocumentMoniker": "QUICK_START.md",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\QUICK_START.md",
+              "RelativeToolTip": "QUICK_START.md",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001818|",
+              "WhenOpened": "2026-02-08T11:55:59.916Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 8,
+              "Title": "postgres-storage.ts",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\postgres-storage.ts",
+              "RelativeDocumentMoniker": "server\\postgres-storage.ts",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\postgres-storage.ts",
+              "RelativeToolTip": "server\\postgres-storage.ts",
+              "ViewState": "AgIAAPkBAAAAAAAAAAAgwBECAAAGAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-08T09:29:35.622Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 10,
+              "Title": "vite.config.ts",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\vite.config.ts",
+              "RelativeDocumentMoniker": "vite.config.ts",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\vite.config.ts",
+              "RelativeToolTip": "vite.config.ts",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-08T11:55:37.344Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 11,
+              "Title": "vite-plugins.ts",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\vite-plugins.ts",
+              "RelativeDocumentMoniker": "vite-plugins.ts",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\vite-plugins.ts",
+              "RelativeToolTip": "vite-plugins.ts",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-08T11:55:32.232Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 12,
+              "Title": "tsconfig.json",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\tsconfig.json",
+              "RelativeDocumentMoniker": "tsconfig.json",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\tsconfig.json",
+              "RelativeToolTip": "tsconfig.json",
+              "ViewState": "AgIAAAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
+              "WhenOpened": "2026-02-08T11:55:30.72Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 14,
+              "Title": "postcss.config.js",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\postcss.config.js",
+              "RelativeDocumentMoniker": "postcss.config.js",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\postcss.config.js",
+              "RelativeToolTip": "postcss.config.js",
+              "ViewState": "AgIAAAYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001646|",
+              "WhenOpened": "2026-02-08T11:55:18.61Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 13,
+              "Title": "tailwind.config.ts",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\tailwind.config.ts",
+              "RelativeDocumentMoniker": "tailwind.config.ts",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\tailwind.config.ts",
+              "RelativeToolTip": "tailwind.config.ts",
+              "ViewState": "AgIAAFcAAAAAAAAAAAAAAA0AAAADAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-08T09:26:37.44Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 15,
+              "Title": "drizzle.config.ts",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\drizzle.config.ts",
+              "RelativeDocumentMoniker": "drizzle.config.ts",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\drizzle.config.ts",
+              "RelativeToolTip": "drizzle.config.ts",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAA0AAAAEAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-08T11:54:56.235Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 16,
+              "Title": "components.json",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\components.json",
+              "RelativeDocumentMoniker": "components.json",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\components.json",
+              "RelativeToolTip": "components.json",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
+              "WhenOpened": "2026-02-08T11:54:53.754Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 17,
+              "Title": ".gitignore",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\.gitignore",
+              "RelativeDocumentMoniker": ".gitignore",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\.gitignore",
+              "RelativeToolTip": ".gitignore",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
+              "WhenOpened": "2026-02-08T11:54:52.481Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 18,
+              "Title": "plugin-types.ts",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\shared\\plugin-types.ts",
+              "RelativeDocumentMoniker": "shared\\plugin-types.ts",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\shared\\plugin-types.ts",
+              "RelativeToolTip": "shared\\plugin-types.ts",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-08T11:52:30.634Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 21,
+              "Title": "telegram-service.ts",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\telegram-service.ts",
+              "RelativeDocumentMoniker": "server\\telegram-service.ts",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\telegram-service.ts",
+              "RelativeToolTip": "server\\telegram-service.ts",
+              "ViewState": "AgIAAMcAAAAAAAAAAAAgwJsAAAAOAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-08T09:36:39.164Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 20,
+              "Title": "vds-terminal.ts",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\vds-terminal.ts",
+              "RelativeDocumentMoniker": "server\\vds-terminal.ts",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\vds-terminal.ts",
+              "RelativeToolTip": "server\\vds-terminal.ts",
+              "ViewState": "AgIAAPIAAAAAAAAAAAAQwPYAAAACAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-08T09:55:13.66Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 22,
+              "Title": "stats-collector.ts",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\stats-collector.ts",
+              "RelativeDocumentMoniker": "server\\stats-collector.ts",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\stats-collector.ts",
+              "RelativeToolTip": "server\\stats-collector.ts",
+              "ViewState": "AgIAALAAAAAAAAAAAAAQwLwAAAAIAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-08T09:36:36.108Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 19,
+              "Title": "vite.ts",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\vite.ts",
+              "RelativeDocumentMoniker": "server\\vite.ts",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\vite.ts",
+              "RelativeToolTip": "server\\vite.ts",
+              "ViewState": "AgIAAFkAAAAAAAAAAAAQwGwAAAACAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-08T10:03:36.284Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 23,
+              "Title": "security.ts",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\security.ts",
+              "RelativeDocumentMoniker": "server\\security.ts",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\security.ts",
+              "RelativeToolTip": "server\\security.ts",
+              "ViewState": "AgIAAIoAAAAAAAAAAAAmwJgAAABCAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-08T09:36:23.06Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 24,
+              "Title": "security-logger.ts",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\security-logger.ts",
+              "RelativeDocumentMoniker": "server\\security-logger.ts",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\security-logger.ts",
+              "RelativeToolTip": "server\\security-logger.ts",
+              "ViewState": "AgIAAE4AAAAAAAAAAAAowE8AAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-08T10:03:38.489Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 25,
+              "Title": "log-streamer.ts",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\log-streamer.ts",
+              "RelativeDocumentMoniker": "server\\log-streamer.ts",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\log-streamer.ts",
+              "RelativeToolTip": "server\\log-streamer.ts",
+              "ViewState": "AgIAACUBAAAAAAAAAAAQwCQBAAACAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-08T11:25:38.018Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 26,
+              "Title": "index.ts",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\index.ts",
+              "RelativeDocumentMoniker": "server\\index.ts",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\index.ts",
+              "RelativeToolTip": "server\\index.ts",
+              "ViewState": "AgIAAHcAAAAAAAAAAAAQwIsAAAACAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-08T11:24:41.833Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 27,
+              "Title": "docker-manager.ts",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\docker-manager.ts",
+              "RelativeDocumentMoniker": "server\\docker-manager.ts",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\docker-manager.ts",
+              "RelativeToolTip": "server\\docker-manager.ts",
+              "ViewState": "AgIAAIoAAAAAAAAAAAAowJ4AAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-08T11:23:22.972Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 31,
+              "Title": "express.d.ts",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\types\\express.d.ts",
+              "RelativeDocumentMoniker": "server\\types\\express.d.ts",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\types\\express.d.ts",
+              "RelativeToolTip": "server\\types\\express.d.ts",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-08T11:19:01.323Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 32,
+              "Title": "express-session.d.ts",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\types\\express-session.d.ts",
+              "RelativeDocumentMoniker": "server\\types\\express-session.d.ts",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\types\\express-session.d.ts",
+              "RelativeToolTip": "server\\types\\express-session.d.ts",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-08T11:19:00.252Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 29,
+              "Title": "ddos-protection.ts",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\ddos-protection.ts",
+              "RelativeDocumentMoniker": "server\\ddos-protection.ts",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\ddos-protection.ts",
+              "RelativeToolTip": "server\\ddos-protection.ts",
+              "ViewState": "AgIAAD8CAAAAAAAAAAAQwFgCAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-08T11:15:30.963Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 30,
+              "Title": "csrf.ts",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\csrf.ts",
+              "RelativeDocumentMoniker": "server\\csrf.ts",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\csrf.ts",
+              "RelativeToolTip": "server\\csrf.ts",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAA8AAAAOAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-08T11:15:18.039Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 28,
+              "Title": "ddos-routes.ts",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\ddos-routes.ts",
+              "RelativeDocumentMoniker": "server\\ddos-routes.ts",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\server\\ddos-routes.ts",
+              "RelativeToolTip": "server\\ddos-routes.ts",
+              "ViewState": "AgIAAHoAAAAAAAAAAAAQwGwAAAACAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-08T09:38:58.389Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 33,
+              "Title": "index.js",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\plugins\\example-plugin\\index.js",
+              "RelativeDocumentMoniker": "plugins\\example-plugin\\index.js",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\plugins\\example-plugin\\index.js",
+              "RelativeToolTip": "plugins\\example-plugin\\index.js",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001646|",
+              "WhenOpened": "2026-02-08T11:18:51.683Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 34,
+              "Title": "index.html",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\client\\index.html",
+              "RelativeDocumentMoniker": "client\\index.html",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\client\\index.html",
+              "RelativeToolTip": "client\\index.html",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001512|",
+              "WhenOpened": "2026-02-08T11:18:46.792Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 35,
+              "Title": "anti-ddos.tsx",
+              "DocumentMoniker": "C:\\Users\\mivod\\Desktop\\SparkPanel\\client\\src\\pages\\anti-ddos.tsx",
+              "RelativeDocumentMoniker": "client\\src\\pages\\anti-ddos.tsx",
+              "ToolTip": "C:\\Users\\mivod\\Desktop\\SparkPanel\\client\\src\\pages\\anti-ddos.tsx",
+              "RelativeToolTip": "client\\src\\pages\\anti-ddos.tsx",
+              "ViewState": "AgIAALgBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-02-08T09:41:33.994Z"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

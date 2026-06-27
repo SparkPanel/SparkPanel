@@ -1,0 +1,195 @@
+import { dockerManager } from "./docker-manager";
+import { storage } from "./storage";
+import type { Server, Node, ServerStats, NodeStats } from "@shared/schema";
+
+
+export class StatsCollector {
+  
+  async collectServerStats(server: Server, node: Node): Promise<ServerStats | null> {
+    if (!server.containerId || server.status !== "running") {
+      return null;
+    }
+
+    try {
+      const container = await dockerManager.getContainer(node, server.containerId);
+      const stats = await container.stats({ stream: false });
+      
+      
+      const cpuDelta = stats.cpu_stats.cpu_usage.total_usage - stats.precpu_stats.cpu_usage.total_usage;
+      const systemDelta = stats.cpu_stats.system_cpu_usage - stats.precpu_stats.system_cpu_usage;
+      const cpuPercent = systemDelta > 0 ? (cpuDelta / systemDelta) * 100 : 0;
+
+      const memUsage = stats.memory_stats.usage || 0;
+      const memLimit = stats.memory_stats.limit || (server.ramLimit * 1024 * 1024 * 1024);
+      const memUsageGB = memUsage / (1024 * 1024 * 1024); 
+
+      const networkRx = stats.networks ? 
+        Object.values(stats.networks).reduce((sum: number, net: any) => sum + (net.rx_bytes || 0), 0) : 0;
+      const networkTx = stats.networks ? 
+        Object.values(stats.networks).reduce((sum: number, net: any) => sum + (net.tx_bytes || 0), 0) : 0;
+
+      
+      let uptime = 0;
+      try {
+        const containerInfo = await container.inspect();
+        if (containerInfo.State && containerInfo.State.StartedAt && containerInfo.State.Status === "running") {
+          const startTime = new Date(containerInfo.State.StartedAt).getTime();
+          uptime = Math.floor((Date.now() - startTime) / 1000);
+        }
+      } catch (error) {
+        console.debug(`Could not calculate uptime for server ${server.id}:`, error);
+      }
+
+      
+      const cpuUsagePercent = Math.min((cpuPercent / 100) * server.cpuLimit, server.cpuLimit);
+      
+      
+      let diskUsageGB = 0;
+      try {
+        const exec = await container.exec({
+          Cmd: ["/bin/sh", "-c", "df -BG /data 2>/dev/null | tail -1 | awk '{print $3}' | sed 's/G//'"],
+          AttachStdout: true,
+          AttachStderr: true,
+        });
+        const stream = await exec.start({ hijack: true, stdin: false });
+        
+        let diskOutput = "";
+        stream.on("data", (chunk: Buffer) => {
+          diskOutput += chunk.toString();
+        });
+        
+        await new Promise<void>((resolve) => {
+          stream.on("end", resolve);
+          stream.on("error", () => resolve()); 
+        });
+        
+        const parsedDisk = parseFloat(diskOutput.trim());
+        if (!isNaN(parsedDisk)) {
+          diskUsageGB = parsedDisk;
+        }
+      } catch (error) {
+        
+        console.debug(`Could not get disk usage for server ${server.id}:`, error);
+      }
+      
+      const serverStats: ServerStats = {
+        serverId: server.id,
+        cpuUsage: cpuUsagePercent,
+        ramUsage: Math.min(memUsageGB, server.ramLimit), 
+        diskUsage: Math.min(diskUsageGB, server.diskLimit), 
+        networkRx: networkRx,
+        networkTx: networkTx,
+        uptime: Math.max(uptime, 0),
+        timestamp: Date.now(),
+      };
+
+      return serverStats;
+    } catch (error) {
+      console.error(`Failed to collect stats for server ${server.id}:`, error);
+      return null;
+    }
+  }
+
+  
+  async collectNodeStats(node: Node): Promise<NodeStats | null> {
+    try {
+      const docker = dockerManager.getDockerClient(node);
+      
+      
+      const containers = await docker.listContainers({ all: true });
+
+      
+      const servers = await storage.getAllServers();
+      const serversOnNode = servers.filter(s => s.nodeId === node.id && s.status === "running");
+      
+      let totalCpuUsage = 0;
+      let totalRamUsage = 0;
+      
+      
+      for (const server of serversOnNode) {
+        if (server.containerId) {
+          const serverStats = await this.collectServerStats(server, node);
+          if (serverStats) {
+            totalCpuUsage += serverStats.cpuUsage;
+            totalRamUsage += serverStats.ramUsage;
+          }
+        }
+      }
+
+      
+      let diskUsageGB = 0;
+      try {
+        const docker = dockerManager.getDockerClient(node);
+        
+        for (const containerInfo of containers) {
+          try {
+            const container = docker.getContainer(containerInfo.Id);
+            const inspect = await container.inspect() as {
+              SizeRootFs?: number;
+              SizeRw?: number;
+            };
+
+            const sizeRootFs = inspect.SizeRootFs ?? 0;
+            const sizeRw = inspect.SizeRw ?? 0;
+            if (sizeRootFs || sizeRw) {
+              const containerSize = (sizeRootFs + sizeRw) / (1024 * 1024 * 1024); 
+              diskUsageGB += containerSize;
+            }
+          } catch (error) {
+            
+            console.debug(`Could not get size for container ${containerInfo.Id}:`, error);
+          }
+        }
+      } catch (error) {
+        
+        console.debug(`Could not get disk usage for node ${node.id}:`, error);
+      }
+
+      const stats: NodeStats = {
+        nodeId: node.id,
+        cpuUsage: Math.min(totalCpuUsage, 100),
+        ramUsage: Math.min(totalRamUsage, node.ramTotal),
+        diskUsage: Math.min(diskUsageGB, node.diskTotal),
+        serversCount: serversOnNode.length,
+        timestamp: Date.now(),
+      };
+
+      return stats;
+    } catch (error) {
+      console.error(`Failed to collect stats for node ${node.id}:`, error);
+      return null;
+    }
+  }
+
+  
+  async updateAllServerStats(): Promise<void> {
+    const servers = await storage.getAllServers();
+    
+    for (const server of servers) {
+      if (server.status === "running" && server.containerId) {
+        const node = await storage.getNode(server.nodeId);
+        if (node) {
+          const stats = await this.collectServerStats(server, node);
+          if (stats) {
+            storage.setServerStats(server.id, stats);
+          }
+        }
+      }
+    }
+  }
+
+  
+  async updateAllNodeStats(): Promise<void> {
+    const nodes = await storage.getAllNodes();
+    
+    for (const node of nodes) {
+      const stats = await this.collectNodeStats(node);
+      if (stats) {
+        storage.setNodeStats(node.id, stats);
+      }
+    }
+  }
+}
+
+export const statsCollector = new StatsCollector();
+

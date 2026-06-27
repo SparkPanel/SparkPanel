@@ -336,4 +336,4 @@ PORT=8080
 
 ## Поддержка
 
-- GitHub Issues: https://github.com/ВАШ_НИК/SparkPanel/issues
+- GitHub Issues: https://github.com/SparkPanel/SparkPanel/issues

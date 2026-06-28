@@ -71,7 +71,7 @@ docker --version   # должно быть 20.10 или выше
 
 ```bash
 cd /opt
-sudo git clone https://github.com/ВАШ_НИК/SparkPanel.git
+sudo git clone https://github.com/SparkPanel/SparkPanel.git
 sudo chown -R $USER:$USER /opt/SparkPanel
 cd /opt/SparkPanel
 ```

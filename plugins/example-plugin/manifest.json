@@ -1,0 +1,15 @@
+{
+  "id": "example-plugin",
+  "name": "Example Plugin",
+  "version": "1.0.0",
+  "description": "An example plugin that shows how plugin hooks work",
+  "author": "SparkPanel Team",
+  "type": "javascript",
+  "enabled": false,
+  "main": "index.js",
+  "hooks": [
+    "server_start",
+    "server_stop",
+    "server_restart"
+  ]
+}

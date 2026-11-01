@@ -1,0 +1,47 @@
+services:
+  panel:
+    build: .
+    image: sparkpanel:1.0.0
+    container_name: sparkpanel
+    restart: unless-stopped
+    ports:
+      - "${PANEL_PORT:-5000}:5000"
+    # Порты игровых серверов публикуются на хосте; через этот адрес панель подключается к их RCON.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      DATABASE_URL: postgresql://sparkpanel:${POSTGRES_PASSWORD:-sparkpanel}@db:5432/sparkpanel
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      FORCE_HTTPS: ${FORCE_HTTPS:-false}
+      TRUST_PROXY: ${TRUST_PROXY:-}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-adplayer}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-0000}
+    volumes:
+      # Панель управляет Docker хоста: игровые серверы запускаются как соседние контейнеры.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - panel-data:/app/data
+      - panel-plugins:/app/plugins
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16-alpine
+    container_name: sparkpanel-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sparkpanel
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sparkpanel}
+      POSTGRES_DB: sparkpanel
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sparkpanel -d sparkpanel"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  panel-data:
+  panel-plugins:
+  db-data:
